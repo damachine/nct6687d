@@ -23,6 +23,17 @@
 4. **Active Development**: Regular updates and bug fixes
 5. **Z890 Compatibility**: Better support for newer Intel chipsets
 
+## Vollständige Implementierung - Alle Scripts und Konfigurationsdateien
+
+Die folgenden Dateien werden für die komplette Installation und Konfiguration benötigt:
+
+1. `diagnose_fans_z890.sh` - Lüfter-Diagnose Script
+2. `analyze_voltages_z890.sh` - Spannungsanalyse Script
+3. `Z890_TOMAHAWK_WIFI_optimized.conf` - Optimierte Sensor-Konfiguration
+4. `validate_z890_config.sh` - Validierungs-Script
+5. `performance_test_z890.sh` - Performance-Test Script
+6. `install_nct6687d_z890.sh` - Automatisches Installations-Script
+
 ## Installation Process for Arch Linux
 
 ### Prerequisites

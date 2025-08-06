@@ -1,13 +1,84 @@
-spd5118-i2c-5-53
+coretemp-isa-0000
+Adapter: ISA adapter
+Package id 0:  +36.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 0:        +34.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 4:        +34.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 12:       +32.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 13:       +32.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 14:       +32.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 15:       +32.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 16:       +32.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 20:       +34.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 24:       +32.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 28:       +34.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 32:       +36.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 33:       +38.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 34:       +38.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 35:       +38.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 36:       +34.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 37:       +34.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 38:       +34.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 39:       +34.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 40:       +32.0°C  (high = +85.0°C, crit = +105.0°C)
+Core 44:       +34.0°C  (high = +85.0°C, crit = +105.0°C)
+
+r8169_0_8100:00-mdio-0
+Adapter: MDIO adapter
+temp1:        +47.5°C  (high = +120.0°C)
+
+nct6687-isa-0a20
+Adapter: ISA adapter
+in0:             1.01 V  (min =  +1.00 V, max =  +1.01 V)
+in1:             1.01 V  (min =  +1.00 V, max =  +1.01 V)
+in2:             1.42 V  (min =  +0.99 V, max =  +1.54 V)
+in3:           356.00 mV (min =  +0.32 V, max =  +0.38 V)
+in4:           706.00 mV (min =  +0.70 V, max =  +0.71 V)
+in5:           270.00 mV (min =  +0.26 V, max =  +0.29 V)
+in6:           232.00 mV (min =  +0.23 V, max =  +0.26 V)
+in7:             1.53 V  (min =  +1.53 V, max =  +1.54 V)
+in8:             3.32 V  (min =  +3.31 V, max =  +3.32 V)
+in9:             3.32 V  (min =  +3.31 V, max =  +3.32 V)
+in10:            3.32 V  (min =  +3.31 V, max =  +3.32 V)
+in11:            3.32 V  (min =  +0.00 V, max =  +3.32 V)
+in12:            3.32 V  (min =  +0.00 V, max =  +3.32 V)
+in13:            1.31 V  (min =  +0.00 V, max =  +1.32 V)
+CPU Fan:       1980 RPM  (min = 1976 RPM, max = 2714 RPM)
+Pump Fan:         0 RPM  (min =    0 RPM, max =    0 RPM)
+System Fan #1:    0 RPM  (min =    0 RPM, max =    0 RPM)
+System Fan #2:    0 RPM  (min =    0 RPM, max =    0 RPM)
+System Fan #3:    0 RPM  (min =    0 RPM, max =    0 RPM)
+System Fan #4:    0 RPM  (min =    0 RPM, max =    0 RPM)
+System Fan #5:    0 RPM  (min =    0 RPM, max =    0 RPM)
+System Fan #6:    0 RPM  (min =    0 RPM, max =    0 RPM)
+CPU:            +36.5°C  (low  = +35.0°C, high = +58.0°C)
+System:         +38.5°C  (low  = +38.5°C, high = +43.0°C)
+VRM MOS:        +35.5°C  (low  = +35.0°C, high = +38.5°C)
+PCH:            +49.5°C  (low  = +49.0°C, high = +50.0°C)
+CPU Socket:     +31.0°C  (low  = +31.0°C, high = +33.5°C)
+PCIe x1:         +0.0°C  (low  =  +0.0°C, high =  +0.0°C)
+M2_1:            +0.0°C  (low  =  +0.0°C, high =  +0.0°C)
+pwm1:               42%
+pwm2:              128%
+pwm3:                0%
+pwm4:               76%
+pwm5:                0%
+pwm6:                0%
+pwm7:                0%
+pwm8:                0%
+
+spd5118-i2c-5-51
 Adapter: SMBus I801 adapter at 0000:80:1f.4
-temp1:        +37.0°C  (low  =  +0.0°C, high = +55.0°C)
+temp1:        +35.8°C  (low  =  +0.0°C, high = +55.0°C)
                        (crit low =  +0.0°C, crit = +85.0°C)
 
-drivetemp-scsi-0-0
-Adapter: SCSI adapter
-temp1:        +33.0°C  (low  =  +0.0°C, high = +100.0°C)
-                       (crit low =  +0.0°C, crit = +100.0°C)
-                       (lowest = +26.0°C, highest = +35.0°C)
+nvme-pci-0100
+Adapter: PCI adapter
+Composite:    +47.9°C  (low  =  -0.1°C, high = +86.8°C)
+                       (crit = +88.8°C)
+
+acpi_fan-acpi-0
+Adapter: ACPI interface
+fan1:             N/A
 
 iwlwifi_1-virtual-0
 Adapter: Virtual device
@@ -15,105 +86,26 @@ temp1:            N/A
 
 kraken2023-hid-3-1
 Adapter: HID adapter
-Pump speed:   1998 RPM
+Pump speed:   1992 RPM
 Fan speed:     704 RPM
-Coolant temp:  +29.0°C  
+Coolant temp:  +27.3°C  
 pwm1:              64%  MANUAL CONTROL
 pwm2:              38%  MANUAL CONTROL
 
-nvme-pci-0100
-Adapter: PCI adapter
-Composite:    +50.9°C  (low  =  -0.1°C, high = +86.8°C)
-                       (crit = +88.8°C)
+drivetemp-scsi-0-0
+Adapter: SCSI adapter
+temp1:        +33.0°C  (low  =  +0.0°C, high = +100.0°C)
+                       (crit low =  +0.0°C, crit = +100.0°C)
+                       (lowest = +26.0°C, highest = +35.0°C)
 
-acpi_fan-acpi-0
-Adapter: ACPI interface
-fan1:             N/A
-
-r8169_0_8100:00-mdio-0
-Adapter: MDIO adapter
-temp1:        +50.0°C  (high = +120.0°C)
-
-spd5118-i2c-5-51
+spd5118-i2c-5-53
 Adapter: SMBus I801 adapter at 0000:80:1f.4
-temp1:        +38.0°C  (low  =  +0.0°C, high = +55.0°C)
+temp1:        +35.0°C  (low  =  +0.0°C, high = +55.0°C)
                        (crit low =  +0.0°C, crit = +85.0°C)
 
 hidpp_battery_0-hid-3-9
 Adapter: HID adapter
 in0:           3.84 V  
-
-coretemp-isa-0000
-Adapter: ISA adapter
-Package id 0:  +37.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 0:        +36.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 4:        +34.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 12:       +34.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 13:       +34.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 14:       +34.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 15:       +34.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 16:       +34.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 20:       +36.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 24:       +36.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 28:       +36.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 32:       +36.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 33:       +36.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 34:       +36.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 35:       +36.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 36:       +36.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 37:       +36.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 38:       +36.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 39:       +36.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 40:       +36.0°C  (high = +85.0°C, crit = +105.0°C)
-Core 44:       +36.0°C  (high = +85.0°C, crit = +105.0°C)
-
-nct6687-isa-0a20
-Adapter: ISA adapter
-VIN0:           992.00 mV (min =  +0.00 V, max =  +0.00 V)
-VIN1:           992.00 mV (min =  +0.00 V, max =  +0.00 V)
-VIN2:             1.28 V  (min =  +0.00 V, max =  +0.00 V)
-VIN3:           352.00 mV (min =  +0.00 V, max =  +0.00 V)
-VIN4:           704.00 mV (min =  +0.00 V, max =  +0.00 V)
-VIN5:           272.00 mV (min =  +0.00 V, max =  +0.00 V)
-VIN6:           256.00 mV (min =  +0.00 V, max =  +0.00 V)
-VIN7:             1.52 V  (min =  +0.00 V, max =  +0.00 V)
-VCC:              3.31 V  (min =  +0.00 V, max =  +0.00 V)
-VSB:              3.31 V  (min =  +0.00 V, max =  +0.00 V)
-AVSB:             3.31 V  (min =  +0.00 V, max =  +0.00 V)
-VTT:              1.31 V  (min =  +0.00 V, max =  +0.00 V)
-VBAT:             3.10 V  (min =  +0.00 V, max =  +0.00 V)
-VREF:             1.78 V  (min =  +0.00 V, max =  +0.00 V)
-fan1:           1976 RPM  (min =    0 RPM)
-fan2:              0 RPM  (min =    0 RPM)
-fan3:              0 RPM  (min =    0 RPM)
-fan4:              0 RPM  (min =    0 RPM)
-fan11:             0 RPM  (min =    0 RPM)
-fan12:             0 RPM  (min =    0 RPM)
-fan13:             0 RPM  (min =    0 RPM)
-fan14:             0 RPM  (min =    0 RPM)
-fan15:           994 RPM  (min =    0 RPM)
-fan16:           997 RPM  (min =    0 RPM)
-PECI 0.0:        +36.5°C  (low  =  +0.0°C)
-                          (high =  +0.0°C, hyst =  +0.0°C)
-                          (crit =  +0.0°C)  sensor = Intel PECI
-Diode 0 (curr):  +43.5°C  (low  =  +0.0°C)
-                          (high =  +0.0°C, hyst =  +0.0°C)
-                          (crit =  +0.0°C)  sensor = thermal diode
-Thermistor 15:   +38.0°C  (low  =  +0.0°C)
-                          (high = +127.0°C, hyst = +27.0°C)
-                          (crit =  +0.0°C)  sensor = thermistor
-PCH CHIP:        +50.5°C  (low  =  +0.0°C)
-                          (high =  +0.0°C, hyst =  +0.0°C)
-                          (crit =  +0.0°C)
-Thermistor 16:   +33.0°C  (low  =  +0.0°C)
-                          (high =  +0.0°C, hyst =  +0.0°C)
-                          (crit =  +0.0°C)  sensor = thermistor
-pwm1:                42%
-pwm2:               128%
-pwm3:                 0%
-pwm4:                76%
-intrusion0:     OK
-beep_enable:    disabled
 
 acpitz-acpi-0
 Adapter: ACPI interface
