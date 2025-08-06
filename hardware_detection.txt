@@ -1,0 +1,8 @@
+[    0.135548] pinctrl core: initialized pinctrl subsystem
+[    0.309096] xor: automatically using best checksumming function   avx       
+[    0.666173] ata1.00: supports DRM functions and may not be fully accessible
+[    0.667198] ata1.00: supports DRM functions and may not be fully accessible
+[    0.928814] nvme nvme0: pci function 0000:01:00.0
+[    3.094088] nct6683: Found NCT6687D or compatible chip at 0x4e:0xa20
+[    3.094234] nct6683 nct6683.2592: Enabling support for unknown customer ID 0x0209
+[    3.097873] nct6683 nct6683.2592: NCT6687D EC firmware version 0.0 build 11/06/24

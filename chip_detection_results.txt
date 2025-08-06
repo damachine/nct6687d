@@ -1,0 +1,6 @@
+=== NCT Chip Detection for MSI MAG Z890 TOMAHAWK WIFI ===
+
+ERROR: outb/inb commands not found. Please install ioport package:
+  Arch Linux: sudo pacman -S ioport
+  Ubuntu/Debian: sudo apt install ioport
+  Fedora: sudo dnf install ioport
