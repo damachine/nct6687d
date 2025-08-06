@@ -24,3 +24,17 @@ debian/nct6687d-dkms*
 debian/.debhelper
 debian/debhelper-build-stamp
 debian/files
+
+# OS files
+.directory
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.code-workspace
+*.swp
+*.swo
+#.vscode/
+.idea/
+.qodo/
+.zencoder/
