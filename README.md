@@ -217,6 +217,32 @@ chip "nct6687-*"
 
   Note: This option requires blacklisting the `nct6683` module to prevent it from loading instead of `nct6687`. See the [Issues](#issues) section for detailed instructions.
 
+- **fan_mask** (uint) (default: all channels, `0xff`)
+  Bitmask of the fan/pwm channels to expose. Bit 0 controls `fan1`/`pwm1`, bit 1
+  controls `fan2`/`pwm2`, and so on up to bit 7 for `fan8`/`pwm8`. Both the
+  tachometer and PWM attributes of a channel are covered by the same bit, since
+  `fanN_input` and `pwmN` are the same physical header.
+
+  Useful on boards with fewer than 8 headers, where the unused channels report a
+  constant 0 RPM.
+
+- **temp_mask** (uint) (default: all channels, `0x7f`)
+  Bitmask of the temperature channels to expose. Bit 0 controls `temp1`, up to
+  bit 6 for `temp7`. Useful for hiding channels the board does not populate.
+
+  Both masks accept decimal or `0x` hex. Masked channels are not read from the EC
+  at all, and channel numbering is never renumbered to fill gaps: masking off
+  bit 1 leaves `fan1` and `fan3`–`fan8` with no `fan2`, so existing `sensors.d`
+  and `fancontrol` configuration keeps referring to the same hardware.
+
+  Examples:
+
+  ```
+  # fan1-fan6 and pwm1-pwm6 only, fan7/fan8/pwm7/pwm8 hidden
+  # temp1-temp4 only, temp5/temp6/temp7 hidden
+      options nct6687 fan_mask=0x3f temp_mask=0x0f
+  ```
+
 <details>
   <summary>Supported MSI boards for ("msi_alt1" and "msi_fan_brute_force")</summary>
 

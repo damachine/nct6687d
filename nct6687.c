@@ -25,6 +25,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/acpi.h>
+#include <linux/bits.h>
 #include <linux/delay.h>
 #include <linux/dmi.h>
 #include <linux/err.h>
@@ -207,6 +208,23 @@ static inline void superio_exit(int ioreg)
 #define NCT6687_NUM_REG_TEMP 7
 #define NCT6687_NUM_REG_FAN 8
 #define NCT6687_NUM_REG_PWM 8
+
+#define NCT6687_FAN_MASK_ALL GENMASK(NCT6687_NUM_REG_FAN - 1, 0)
+#define NCT6687_TEMP_MASK_ALL GENMASK(NCT6687_NUM_REG_TEMP - 1, 0)
+
+static unsigned int fan_mask = NCT6687_FAN_MASK_ALL;   // Bit N enables fanN+1/pwmN+1
+static unsigned int temp_mask = NCT6687_TEMP_MASK_ALL; // Bit N enables tempN+1
+
+module_param(fan_mask, uint, 0444);
+MODULE_PARM_DESC(fan_mask, "Bitmask of enabled fan/pwm channels, bit 0 = fan1/pwm1 (default: all channels)");
+
+module_param(temp_mask, uint, 0444);
+MODULE_PARM_DESC(temp_mask, "Bitmask of enabled temperature channels, bit 0 = temp1 (default: all channels)");
+
+#define NCT6687_FAN_ENABLED(x) (fan_mask & BIT(x))
+#define NCT6687_TEMP_ENABLED(x) (temp_mask & BIT(x))
+
+#define NCT6687_ATTRS_PER_CHANNEL(_templates) ((int)ARRAY_SIZE(_templates) - 1)
 
 #define NCT6687_REG_TEMP(x) (0x100 + (x) * 2)
 #define NCT6687_REG_VOLTAGE(x) (0x120 + (x) * 2)
@@ -810,9 +828,16 @@ static void nct6687_update_temperatures(struct nct6687_data *data)
 
 	for (i = 0; i < NCT6687_NUM_REG_TEMP; i++)
 	{
-		s32 value = (char)nct6687_read(data, NCT6687_REG_TEMP(i));
-		s32 half = (nct6687_read(data, NCT6687_REG_TEMP(i) + 1) >> 7) & 0x1;
-		s32 temperature = (value * 1000) + (500 * half);
+		s32 value;
+		s32 half;
+		s32 temperature;
+
+		if (!NCT6687_TEMP_ENABLED(i))
+			continue;
+
+		value = (char)nct6687_read(data, NCT6687_REG_TEMP(i));
+		half = (nct6687_read(data, NCT6687_REG_TEMP(i) + 1) >> 7) & 0x1;
+		temperature = (value * 1000) + (500 * half);
 
 		data->temperature[0][i] = temperature;
 		data->temperature[1][i] = MIN(temperature, data->temperature[1][i]);
@@ -867,7 +892,12 @@ static void nct6687_update_fans(struct nct6687_data *data)
 
 	for (i = 0; i < NCT6687_NUM_REG_FAN; i++)
 	{
-		s16 rmp = nct6687_read16(data, NCT6687_REG_FAN_RPM(i));
+		s16 rmp;
+
+		if (!NCT6687_FAN_ENABLED(i))
+			continue;
+
+		rmp = nct6687_read16(data, NCT6687_REG_FAN_RPM(i));
 
 		data->rpm[0][i] = rmp;
 		data->rpm[1][i] = MIN(rmp, data->rpm[1][i]);
@@ -878,6 +908,9 @@ static void nct6687_update_fans(struct nct6687_data *data)
 
 	for (i = 0; i < NCT6687_NUM_REG_PWM; i++)
 	{
+		if (!NCT6687_FAN_ENABLED(i))
+			continue;
+
 		data->pwm[i] = nct6687_read(data, NCT6687_REG_PWM(i));
 		data->pwm_enable[i] = nct6687_get_pwm_enable(data, i);
 
@@ -971,11 +1004,6 @@ static ssize_t show_fan_value(struct device *dev, struct device_attribute *attr,
 	return sprintf(buf, "%d\n", data->rpm[sattr->index][sattr->nr]);
 }
 
-static umode_t nct6687_fan_is_visible(struct kobject *kobj, struct attribute *attr, int index)
-{
-	return attr->mode;
-}
-
 SENSOR_TEMPLATE(fan_label, "fan%d_label", S_IRUGO, show_fan_label, NULL, 0);
 SENSOR_TEMPLATE_2(fan_input, "fan%d_input", S_IRUGO, show_fan_value, NULL, 0, 0);
 SENSOR_TEMPLATE_2(fan_min, "fan%d_min", S_IRUGO, show_fan_value, NULL, 0, 1);
@@ -993,6 +1021,14 @@ static struct sensor_device_template *nct6687_attributes_fan_template[] = {
 	&sensor_dev_template_fan_max,
 	NULL,
 };
+
+static umode_t nct6687_fan_is_visible(struct kobject *kobj, struct attribute *attr, int index)
+{
+	if (!NCT6687_FAN_ENABLED(index / NCT6687_ATTRS_PER_CHANNEL(nct6687_attributes_fan_template)))
+		return 0;
+
+	return attr->mode;
+}
 
 static const struct sensor_template_group nct6687_fan_template_group = {
 	.templates = nct6687_attributes_fan_template,
@@ -1015,11 +1051,6 @@ static ssize_t show_temperature_value(struct device *dev, struct device_attribut
 	return sprintf(buf, "%d\n", data->temperature[sattr->index][sattr->nr]);
 }
 
-static umode_t nct6687_temp_is_visible(struct kobject *kobj, struct attribute *attr, int index)
-{
-	return attr->mode;
-}
-
 SENSOR_TEMPLATE(temp_label, "temp%d_label", S_IRUGO, show_temperature_label, NULL, 0);
 SENSOR_TEMPLATE_2(temp_input, "temp%d_input", S_IRUGO, show_temperature_value, NULL, 0, 0);
 SENSOR_TEMPLATE_2(temp_min, "temp%d_min", S_IRUGO, show_temperature_value, NULL, 0, 1);
@@ -1037,6 +1068,14 @@ static struct sensor_device_template *nct6687_attributes_temp_template[] = {
 	&sensor_dev_template_temp_max,
 	NULL,
 };
+
+static umode_t nct6687_temp_is_visible(struct kobject *kobj, struct attribute *attr, int index)
+{
+	if (!NCT6687_TEMP_ENABLED(index / NCT6687_ATTRS_PER_CHANNEL(nct6687_attributes_temp_template)))
+		return 0;
+
+	return attr->mode;
+}
 
 static const struct sensor_template_group nct6687_temp_template_group = {
 	.templates = nct6687_attributes_temp_template,
@@ -1293,16 +1332,24 @@ static void nct6687_restore_fan_control(struct nct6687_data *data, int index)
 	}
 }
 
-static umode_t nct6687_pwm_is_visible(struct kobject *kobj, struct attribute *attr, int index)
-{
-	return attr->mode | S_IWUSR;
-}
-
+/*
+ * nct6687_pwm_is_visible uses the index into the following array
+ * to determine if attributes should be created or not.
+ * Any change in order or content must be matched.
+ */
 static struct sensor_device_template *nct6687_attributes_pwm_template[] = {
 	&sensor_dev_template_pwm,
 	&sensor_dev_template_pwm_enable,
 	NULL,
 };
+
+static umode_t nct6687_pwm_is_visible(struct kobject *kobj, struct attribute *attr, int index)
+{
+	if (!NCT6687_FAN_ENABLED(index / NCT6687_ATTRS_PER_CHANNEL(nct6687_attributes_pwm_template)))
+		return 0;
+
+	return attr->mode | S_IWUSR;
+}
 
 static const struct sensor_template_group nct6687_pwm_template_group = {
 	.templates = nct6687_attributes_pwm_template,
@@ -1493,6 +1540,8 @@ static int nct6687_probe(struct platform_device *pdev)
 		 nct6687_fan_config_active[2].reg_rpm,
 		 nct6687_fan_config_active[3].reg_rpm,
 		 nct6687_fan_config_active[4].reg_rpm);
+
+	dev_info(dev, "enabled channels: fan/pwm mask=0x%02x, temp mask=0x%02x\n", fan_mask, temp_mask);
 
 	pr_debug("nct6687_probe addr=0x%04X, sioreg=0x%04X\n", data->addr, data->sioreg);
 
@@ -1708,6 +1757,18 @@ static int __init sensors_nct6687_init(void)
 	bool found = false;
 	int address;
 	int i, err;
+
+	if (fan_mask & ~NCT6687_FAN_MASK_ALL)
+	{
+		pr_warn("fan_mask=0x%x has bits above fan%d, ignoring them\n", fan_mask, NCT6687_NUM_REG_FAN);
+		fan_mask &= NCT6687_FAN_MASK_ALL;
+	}
+
+	if (temp_mask & ~NCT6687_TEMP_MASK_ALL)
+	{
+		pr_warn("temp_mask=0x%x has bits above temp%d, ignoring them\n", temp_mask, NCT6687_NUM_REG_TEMP);
+		temp_mask &= NCT6687_TEMP_MASK_ALL;
+	}
 
 	/* Auto-detect MSI boards that require msi_alt1 configuration */
 	if (nct6687_fan_config_type == FAN_CONFIG_DEFAULT)
