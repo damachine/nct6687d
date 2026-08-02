@@ -525,7 +525,7 @@ static const struct kernel_param_ops nct6687_fan_config_op_ops = {
 	.get = nct6687_fan_config_op_read_handler};
 
 /*
- * fan_config is intentionally a boot-time parameter only (perm 0440 —
+ * fan_config is intentionally a boot-time parameter only (perm 0444 —
  * world-readable, not writable from sysfs). nct6687_fan_config_active
  * is a globally-shared pointer that sysfs reader paths dereference
  * lock-free for every fan/pwm access; allowing runtime writes via
@@ -539,7 +539,7 @@ static const struct kernel_param_ops nct6687_fan_config_op_ops = {
  * is safe (before the platform_device is probed and before any reader
  * exists).
  */
-module_param_cb(fan_config, &nct6687_fan_config_op_ops, NULL, 0440);
+module_param_cb(fan_config, &nct6687_fan_config_op_ops, NULL, 0444);
 
 /* ------------------------------------------------------- */
 struct nct6687_data
