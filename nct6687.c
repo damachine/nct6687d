@@ -474,6 +474,7 @@ static const struct dmi_system_id nct6687_msi_alt_boards[] = {
 	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "MEG X870E GODLIKE (MS-7E48)")}},
 
 	// Z890 Series
+	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "MEG Z890 GODLIKE (MS-7E21)")}},
 	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "MEG Z890 ACE (MS-7E22)")}},
 	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "MEG Z890M ACE (MS-7E23)")}},
 	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "MPG Z890 CARBON WIFI (MS-7E17)")}},
