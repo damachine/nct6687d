@@ -1879,7 +1879,11 @@ static int nct6687_probe(struct platform_device *pdev)
 
 static int nct6687_suspend(struct device *dev)
 {
-	struct nct6687_data *data = nct6687_update_device(dev);
+	struct nct6687_data *data = dev_get_drvdata(dev);
+
+	/* Do not let the watchdog access the EC while the device is suspended. */
+	cancel_delayed_work_sync(&data->fan_watchdog_work);
+	data = nct6687_update_device(dev);
 
 	mutex_lock(&data->update_lock);
 	data->hwm_cfg = nct6687_read(data, NCT6687_HWM_CFG);
@@ -1891,6 +1895,7 @@ static int nct6687_suspend(struct device *dev)
 static int nct6687_resume(struct device *dev)
 {
 	struct nct6687_data *data = dev_get_drvdata(dev);
+	unsigned long watchdog_delay = 0;
 
 	mutex_lock(&data->update_lock);
 
@@ -1898,7 +1903,19 @@ static int nct6687_resume(struct device *dev)
 
 	/* Force re-reading all values */
 	data->valid = false;
+	/* jiffies stops in system sleep, preserving the remaining lease. */
+	if (data->fan_watchdog_timeout)
+	{
+		if (time_before(jiffies, data->fan_watchdog_deadline))
+			watchdog_delay = data->fan_watchdog_deadline - jiffies;
+		else
+			watchdog_delay = 1;
+	}
 	mutex_unlock(&data->update_lock);
+
+	if (watchdog_delay)
+		mod_delayed_work(system_long_wq, &data->fan_watchdog_work,
+				 watchdog_delay);
 
 	return 0;
 }

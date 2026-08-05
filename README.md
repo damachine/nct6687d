@@ -223,7 +223,9 @@ chip "nct6687-*"
   1 to 300 seconds arms or refreshes a manual-control lease. If the lease expires, every channel
   changed since the last automatic-mode request is restored to its original curve and control mode.
   Writing `0` disarms the watchdog. A controlling daemon should refresh the lease independently of
-  PWM value changes and disarm it only after returning all channels to automatic control.
+  PWM value changes and disarm it only after returning all channels to automatic control. The lease
+  is paused while the system is suspended and resumes with its remaining time after the device is
+  active again.
 
   Note: This option requires blacklisting the `nct6683` module to prevent it from loading instead of `nct6687`. See the [Issues](#issues) section for detailed instructions.
 
