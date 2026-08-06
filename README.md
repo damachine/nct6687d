@@ -210,10 +210,22 @@ chip "nct6687-*"
   For MSI motherboards with `msi_alt1` configuration: When enabled, writes PWM values to all 7 fan 
   curve control points. This may help with fan control on some MSI boards where standard PWM writes 
   don't take effect immediately. Only affects system fans controlled by the BIOS. Not the CPU fan or pump fan. 
+
+  Before entering manual control, the driver saves all 7 original curve points. The saved curve is
+  restored when userspace writes automatic mode to `pwmN_enable`, when the driver is unloaded, or
+  when the optional fan-control watchdog expires.
   
   This implementation is based on register mappings from [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor).
   
   Usage: `modprobe nct6687 msi_fan_brute_force=1`
+
+  With this option enabled, the hwmon device exposes `fan_control_watchdog`. Writing a timeout from
+  1 to 300 seconds arms or refreshes a manual-control lease. If the lease expires, every channel
+  changed since the last automatic-mode request is restored to its original curve and control mode.
+  Writing `0` disarms the watchdog. A controlling daemon should refresh the lease independently of
+  PWM value changes and disarm it only after returning all channels to automatic control. The lease
+  is paused while the system is suspended and resumes with its remaining time after the device is
+  active again.
 
   Note: This option requires blacklisting the `nct6683` module to prevent it from loading instead of `nct6687`. See the [Issues](#issues) section for detailed instructions.
 
