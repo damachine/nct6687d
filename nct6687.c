@@ -594,9 +594,15 @@ struct nct6687_data
 	u8 _initialFanPwmCommand[NCT6687_NUM_REG_FAN];
 	u8 _initialFanCurve[NCT6687_NUM_REG_FAN][NCT6687_FAN_CURVE_POINTS];
 	bool _restoreDefaultFanControlRequired[NCT6687_NUM_REG_FAN];
+	/*
+	 * Serializes watchdog state changes with delayed-work operations.
+	 * Lock ordering: fan_watchdog_lock, then update_lock.
+	 */
+	struct mutex fan_watchdog_lock;
 	struct delayed_work fan_watchdog_work;
 	unsigned long fan_watchdog_deadline;
 	unsigned int fan_watchdog_timeout;
+	bool removing; /* Protected by update_lock. */
 
 	u8 pwm[NCT6687_NUM_REG_PWM];
 	enum pwm_enable pwm_enable[NCT6687_NUM_REG_PWM];
@@ -1267,6 +1273,11 @@ static ssize_t store_pwm(struct device *dev, struct device_attribute *attr, cons
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
+	if (data->removing)
+	{
+		mutex_unlock(&data->update_lock);
+		return -ENODEV;
+	}
 
 	if (!nct6687_save_fan_control(data, index))
 	{
@@ -1341,6 +1352,11 @@ static ssize_t store_pwm_enable(struct device *dev, struct device_attribute *att
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
+	if (data->removing)
+	{
+		mutex_unlock(&data->update_lock);
+		return -ENODEV;
+	}
 
 	if (val == manual_mode)
 	{
@@ -1583,7 +1599,14 @@ static ssize_t fan_control_watchdog_store(struct device *dev,
 	if (timeout > NCT6687_FAN_WATCHDOG_MAX_SECONDS)
 		return -ERANGE;
 
+	mutex_lock(&data->fan_watchdog_lock);
 	mutex_lock(&data->update_lock);
+	if (data->removing)
+	{
+		mutex_unlock(&data->update_lock);
+		mutex_unlock(&data->fan_watchdog_lock);
+		return -ENODEV;
+	}
 	data->fan_watchdog_timeout = timeout;
 	if (timeout)
 		data->fan_watchdog_deadline = jiffies + secs_to_jiffies(timeout);
@@ -1594,6 +1617,7 @@ static ssize_t fan_control_watchdog_store(struct device *dev,
 				 secs_to_jiffies(timeout));
 	else
 		cancel_delayed_work_sync(&data->fan_watchdog_work);
+	mutex_unlock(&data->fan_watchdog_lock);
 
 	return count;
 }
@@ -1757,7 +1781,14 @@ static void nct6687_remove(struct platform_device *pdev)
 	struct nct6687_data *data = dev_get_drvdata(dev);
 	int i;
 
+	/* devm hwmon attributes remain live until after remove returns. */
+	mutex_lock(&data->fan_watchdog_lock);
+	mutex_lock(&data->update_lock);
+	data->removing = true;
+	data->fan_watchdog_timeout = 0;
+	mutex_unlock(&data->update_lock);
 	cancel_delayed_work_sync(&data->fan_watchdog_work);
+	mutex_unlock(&data->fan_watchdog_lock);
 
 	mutex_lock(&data->update_lock);
 
@@ -1824,6 +1855,7 @@ static int nct6687_probe(struct platform_device *pdev)
 
 	mutex_init(&data->update_lock);
 	mutex_init(&data->EC_io_lock);
+	mutex_init(&data->fan_watchdog_lock);
 	INIT_DELAYED_WORK(&data->fan_watchdog_work, nct6687_fan_watchdog_work);
 	platform_set_drvdata(pdev, data);
 
@@ -1883,7 +1915,9 @@ static int nct6687_suspend(struct device *dev)
 	struct nct6687_data *data = dev_get_drvdata(dev);
 
 	/* Do not let the watchdog access the EC while the device is suspended. */
+	mutex_lock(&data->fan_watchdog_lock);
 	cancel_delayed_work_sync(&data->fan_watchdog_work);
+	mutex_unlock(&data->fan_watchdog_lock);
 	data = nct6687_update_device(dev);
 
 	mutex_lock(&data->update_lock);
@@ -1898,6 +1932,7 @@ static int nct6687_resume(struct device *dev)
 	struct nct6687_data *data = dev_get_drvdata(dev);
 	unsigned long watchdog_delay = 0;
 
+	mutex_lock(&data->fan_watchdog_lock);
 	mutex_lock(&data->update_lock);
 
 	nct6687_write(data, NCT6687_HWM_CFG, data->hwm_cfg);
@@ -1905,7 +1940,7 @@ static int nct6687_resume(struct device *dev)
 	/* Force re-reading all values */
 	data->valid = false;
 	/* jiffies stops in system sleep, preserving the remaining lease. */
-	if (data->fan_watchdog_timeout)
+	if (!data->removing && data->fan_watchdog_timeout)
 	{
 		if (time_before(jiffies, data->fan_watchdog_deadline))
 			watchdog_delay = data->fan_watchdog_deadline - jiffies;
@@ -1917,6 +1952,7 @@ static int nct6687_resume(struct device *dev)
 	if (watchdog_delay)
 		mod_delayed_work(system_long_wq, &data->fan_watchdog_work,
 				 watchdog_delay);
+	mutex_unlock(&data->fan_watchdog_lock);
 
 	return 0;
 }
