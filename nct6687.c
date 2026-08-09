@@ -209,9 +209,19 @@ static inline void superio_exit(int ioreg)
 #define NCT6687_NUM_REG_VOLTAGE (sizeof(nct6687_voltage_definition) / sizeof(struct voltage_reg))
 #define NCT6687_NUM_REG_TEMP 7
 #define NCT6687_NUM_REG_FAN 8
+
+/*
+ * Some boards expose extra tachometer-only inputs that have no PWM control
+ * path (e.g. MSI MEG Z890 GODLIKE has a second pump header readable at 0x144
+ * in the msi_alt1 mapping). Those channels get fanN_input/fanN_label but no
+ * pwmN attribute, so all PWM/control arrays stay at NCT6687_NUM_REG_FAN.
+ */
+#define NCT6687_NUM_REG_FAN_MAX 9
 #define NCT6687_NUM_REG_PWM 8
 
-#define NCT6687_FAN_MASK_ALL GENMASK(NCT6687_NUM_REG_FAN - 1, 0)
+#define NCT6687_FAN_MASK_ALL GENMASK(NCT6687_NUM_REG_FAN_MAX - 1, 0)
+/* PWM channels never exceed NCT6687_NUM_REG_FAN */
+#define NCT6687_PWM_MASK_ALL GENMASK(NCT6687_NUM_REG_FAN - 1, 0)
 #define NCT6687_TEMP_MASK_ALL GENMASK(NCT6687_NUM_REG_TEMP - 1, 0)
 
 static unsigned int fan_mask = NCT6687_FAN_MASK_ALL;   // Bit N enables fanN+1/pwmN+1
@@ -418,6 +428,13 @@ static struct nct6687_fan_config nct6687_fan_config_msi_alt[] = {
 	{.reg_rpm = 0x158, .reg_pwm = 0xE02, .reg_pwm_write = 0xC28, .label = "System Fan #4"},
 	{.reg_rpm = 0x156, .reg_pwm = 0xE01, .reg_pwm_write = 0xC10, .label = "System Fan #5"},
 	{.reg_rpm = 0x154, .reg_pwm = 0xE00, .reg_pwm_write = 0xBF8, .label = "System Fan #6"},
+	/*
+	 * Tachometer-only channel: second pump header (PUMP_SYS Fan 2 in BIOS).
+	 * 0x144 is unused in this mapping since the system fans moved to
+	 * 0x154-0x15E. No PWM control path has been verified for it, so
+	 * reg_pwm/reg_pwm_write are left at 0 and no pwm attribute is created.
+	 */
+	{.reg_rpm = 0x144, .reg_pwm = 0, .reg_pwm_write = 0, .label = "Pump Fan #2"},
 };
 
 enum nct6687_fan_config_type
@@ -493,6 +510,13 @@ static const struct dmi_system_id nct6687_msi_alt_boards[] = {
 static int nct6687_fan_config_type = FAN_CONFIG_DEFAULT; // default
 static struct nct6687_fan_config(*nct6687_fan_config_active) = nct6687_fan_config_default;
 
+/*
+ * Number of fan (tachometer) channels exposed by the active mapping.
+ * PWM/control arrays always stay at NCT6687_NUM_REG_FAN; only mappings that
+ * declare extra tachometer-only channels raise this.
+ */
+static int nct6687_fan_channels = NCT6687_NUM_REG_FAN;
+
 static int nct6687_fan_config_op_write_handler(const char *val, const struct kernel_param *kp)
 {
 	char valcp[16];
@@ -507,11 +531,13 @@ static int nct6687_fan_config_op_write_handler(const char *val, const struct ker
 	{
 		nct6687_fan_config_type = FAN_CONFIG_DEFAULT;
 		nct6687_fan_config_active = nct6687_fan_config_default;
+		nct6687_fan_channels = NCT6687_NUM_REG_FAN;
 	}
 	else if (strcmp(s, "msi_alt1") == 0)
 	{
 		nct6687_fan_config_type = FAN_CONFIG_MSI_ALT1;
 		nct6687_fan_config_active = nct6687_fan_config_msi_alt;
+		nct6687_fan_channels = ARRAY_SIZE(nct6687_fan_config_msi_alt);
 	}
 	else
 	{
@@ -589,7 +615,7 @@ struct nct6687_data
 	s32 temperature[3][NCT6687_NUM_REG_TEMP]; // 0 = current 1 = min 2 = max
 
 	/* Fan attribute values */
-	u16 rpm[3][NCT6687_NUM_REG_FAN]; // 0 = current 1 = min 2 = max
+	u16 rpm[3][NCT6687_NUM_REG_FAN_MAX]; // 0 = current 1 = min 2 = max
 	u8 _initialFanControlMode[NCT6687_NUM_REG_FAN];
 	u8 _initialFanPwmCommand[NCT6687_NUM_REG_FAN];
 	u8 _initialFanCurve[NCT6687_NUM_REG_FAN][NCT6687_FAN_CURVE_POINTS];
@@ -955,7 +981,8 @@ static void nct6687_update_fans(struct nct6687_data *data)
 {
 	int i;
 
-	for (i = 0; i < NCT6687_NUM_REG_FAN; i++)
+	/* tachometer-only channels included (no PWM state touched here) */
+	for (i = 0; i < nct6687_fan_channels; i++)
 	{
 		s16 rmp;
 
@@ -1646,8 +1673,13 @@ static struct sensor_device_template *nct6687_attributes_pwm_template[] = {
 
 static umode_t nct6687_pwm_is_visible(struct kobject *kobj, struct attribute *attr, int index)
 {
-	if (!NCT6687_FAN_ENABLED(index / NCT6687_ATTRS_PER_CHANNEL(nct6687_attributes_pwm_template)))
-		return 0;
+	{
+		int ch = index / NCT6687_ATTRS_PER_CHANNEL(nct6687_attributes_pwm_template);
+
+		/* tachometer-only channels have no PWM control path */
+		if (ch >= NCT6687_NUM_REG_FAN || !NCT6687_FAN_ENABLED(ch))
+			return 0;
+	}
 
 	return attr->mode | S_IWUSR;
 }
@@ -1687,6 +1719,18 @@ static inline void nct6687_init_device(struct nct6687_data *data)
 static void nct6687_setup_fans(struct nct6687_data *data)
 {
 	int i;
+
+	/*
+	 * Tachometer-only channels (index >= NCT6687_NUM_REG_FAN) have no PWM
+	 * control path, so they are seeded separately below and skipped here.
+	 */
+	for (i = NCT6687_NUM_REG_FAN; i < nct6687_fan_channels; i++) {
+		u16 rpm = nct6687_read16(data, NCT6687_REG_FAN_RPM(i));
+
+		data->rpm[0][i] = rpm;
+		data->rpm[1][i] = rpm;
+		data->rpm[2][i] = rpm;
+	}
 
 	for (i = 0; i < NCT6687_NUM_REG_FAN; i++)
 	{
@@ -1833,6 +1877,7 @@ static int nct6687_probe(struct platform_device *pdev)
 	{
 		nct6687_fan_config_type = FAN_CONFIG_MSI_ALT1;
 		nct6687_fan_config_active = nct6687_fan_config_msi_alt;
+		nct6687_fan_channels = ARRAY_SIZE(nct6687_fan_config_msi_alt);
 		dev_info(dev, "Detected MSI board; using alternative fan configuration (msi_alt1)\n");
 		dev_info(dev, "MSI fan brute force mode: %s\n",
 				 msi_fan_brute_force ? "enabled" : "disabled");
@@ -1884,7 +1929,7 @@ static int nct6687_probe(struct platform_device *pdev)
 
 	data->groups[groups++] = group;
 
-	group = nct6687_create_attr_group(dev, &nct6687_fan_template_group, NCT6687_NUM_REG_FAN);
+	group = nct6687_create_attr_group(dev, &nct6687_fan_template_group, nct6687_fan_channels);
 
 	if (IS_ERR(group))
 		return PTR_ERR(group);
@@ -2097,7 +2142,7 @@ static int __init sensors_nct6687_init(void)
 
 	if (fan_mask & ~NCT6687_FAN_MASK_ALL)
 	{
-		pr_warn("fan_mask=0x%x has bits above fan%d, ignoring them\n", fan_mask, NCT6687_NUM_REG_FAN);
+		pr_warn("fan_mask=0x%x has bits above fan%d, ignoring them\n", fan_mask, NCT6687_NUM_REG_FAN_MAX);
 		fan_mask &= NCT6687_FAN_MASK_ALL;
 	}
 
@@ -2115,6 +2160,7 @@ static int __init sensors_nct6687_init(void)
 			pr_info("Detected MSI board requiring msi_alt1 fan configuration\n");
 			nct6687_fan_config_type = FAN_CONFIG_MSI_ALT1;
 			nct6687_fan_config_active = nct6687_fan_config_msi_alt;
+			nct6687_fan_channels = ARRAY_SIZE(nct6687_fan_config_msi_alt);
 		}
 	}
 
