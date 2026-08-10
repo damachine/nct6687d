@@ -219,12 +219,14 @@ static inline void superio_exit(int ioreg)
 #define NCT6687_NUM_REG_FAN_MAX 9
 #define NCT6687_NUM_REG_PWM 8
 
+/* Default mask covers the eight PWM-capable channels. Boards that expose the
+ * tachometer-only ninth channel get that bit added once detected. */
 #define NCT6687_FAN_MASK_ALL GENMASK(NCT6687_NUM_REG_FAN_MAX - 1, 0)
+#define NCT6687_FAN_MASK_DEFAULT GENMASK(NCT6687_NUM_REG_FAN - 1, 0)
 /* PWM channels never exceed NCT6687_NUM_REG_FAN */
-#define NCT6687_PWM_MASK_ALL GENMASK(NCT6687_NUM_REG_FAN - 1, 0)
 #define NCT6687_TEMP_MASK_ALL GENMASK(NCT6687_NUM_REG_TEMP - 1, 0)
 
-static unsigned int fan_mask = NCT6687_FAN_MASK_ALL;   // Bit N enables fanN+1/pwmN+1
+static unsigned int fan_mask = NCT6687_FAN_MASK_DEFAULT;   // Bit N enables fanN+1/pwmN+1
 static unsigned int temp_mask = NCT6687_TEMP_MASK_ALL; // Bit N enables tempN+1
 
 module_param(fan_mask, uint, 0444);
@@ -515,6 +517,28 @@ static struct nct6687_fan_config(*nct6687_fan_config_active) = nct6687_fan_confi
  * PWM/control arrays always stay at NCT6687_NUM_REG_FAN; only mappings that
  * declare extra tachometer-only channels raise this.
  */
+/*
+ * Boards with a second pump header whose tachometer is readable at 0x144
+ * in the msi_alt1 mapping. Verified per board - do not add entries without
+ * confirming the reading against the BIOS hardware monitor.
+ */
+static const struct dmi_system_id nct6687_dual_pump_boards[] = {
+	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "MEG Z890 GODLIKE (MS-7E21)")}},
+	{}
+};
+
+static int nct6687_msi_alt_channels(void)
+{
+	if (!dmi_check_system(nct6687_dual_pump_boards))
+		return NCT6687_NUM_REG_FAN;
+
+	/* enable the extra tachometer bit unless the user set fan_mask explicitly */
+	if (fan_mask == NCT6687_FAN_MASK_DEFAULT)
+		fan_mask |= BIT(NCT6687_NUM_REG_FAN);
+
+	return ARRAY_SIZE(nct6687_fan_config_msi_alt);
+}
+
 static int nct6687_fan_channels = NCT6687_NUM_REG_FAN;
 
 static int nct6687_fan_config_op_write_handler(const char *val, const struct kernel_param *kp)
@@ -537,7 +561,7 @@ static int nct6687_fan_config_op_write_handler(const char *val, const struct ker
 	{
 		nct6687_fan_config_type = FAN_CONFIG_MSI_ALT1;
 		nct6687_fan_config_active = nct6687_fan_config_msi_alt;
-		nct6687_fan_channels = ARRAY_SIZE(nct6687_fan_config_msi_alt);
+		nct6687_fan_channels = nct6687_msi_alt_channels();
 	}
 	else
 	{
@@ -1877,7 +1901,7 @@ static int nct6687_probe(struct platform_device *pdev)
 	{
 		nct6687_fan_config_type = FAN_CONFIG_MSI_ALT1;
 		nct6687_fan_config_active = nct6687_fan_config_msi_alt;
-		nct6687_fan_channels = ARRAY_SIZE(nct6687_fan_config_msi_alt);
+		nct6687_fan_channels = nct6687_msi_alt_channels();
 		dev_info(dev, "Detected MSI board; using alternative fan configuration (msi_alt1)\n");
 		dev_info(dev, "MSI fan brute force mode: %s\n",
 				 msi_fan_brute_force ? "enabled" : "disabled");
@@ -2160,7 +2184,7 @@ static int __init sensors_nct6687_init(void)
 			pr_info("Detected MSI board requiring msi_alt1 fan configuration\n");
 			nct6687_fan_config_type = FAN_CONFIG_MSI_ALT1;
 			nct6687_fan_config_active = nct6687_fan_config_msi_alt;
-			nct6687_fan_channels = ARRAY_SIZE(nct6687_fan_config_msi_alt);
+			nct6687_fan_channels = nct6687_msi_alt_channels();
 		}
 	}
 
