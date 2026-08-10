@@ -701,7 +701,7 @@ static struct attribute_group *nct6687_create_attr_group(struct device *dev, con
 	struct sensor_device_attr_u *su;
 	struct attribute_group *group;
 	struct attribute **attrs;
-	int i, j, count;
+	int i, count;
 
 	if (repeat <= 0)
 		return ERR_PTR(-EINVAL);
@@ -732,7 +732,7 @@ static struct attribute_group *nct6687_create_attr_group(struct device *dev, con
 	{
 		t = tg->templates;
 
-		for (j = 0; *t != NULL; j++)
+		while (*t != NULL)
 		{
 			snprintf(su->name, sizeof(su->name), (*t)->dev_attr.attr.name, tg->base + i);
 
