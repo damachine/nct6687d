@@ -1298,9 +1298,12 @@ static ssize_t store_pwm(struct device *dev, struct device_attribute *attr, cons
 
 	if (nct6687_uses_msi_fan_curve(index))
 	{
-		if (!nct6687_curve_matches(data, NCT6687_REG_PWM_WRITE(index), val))
-			nct6687_write_all_curve(data, NCT6687_REG_PWM_WRITE(index), val);
 		success = nct6687_curve_matches(data, NCT6687_REG_PWM_WRITE(index), val);
+		if (!success)
+		{
+			nct6687_write_all_curve(data, NCT6687_REG_PWM_WRITE(index), val);
+			success = nct6687_curve_matches(data, NCT6687_REG_PWM_WRITE(index), val);
+		}
 		if (!success)
 			pr_err("Failed to verify MSI fan %d curve write\n", index);
 	}
