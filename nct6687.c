@@ -226,7 +226,11 @@ static inline void superio_exit(int ioreg)
 /* PWM channels never exceed NCT6687_NUM_REG_FAN */
 #define NCT6687_TEMP_MASK_ALL GENMASK(NCT6687_NUM_REG_TEMP - 1, 0)
 
-static unsigned int fan_mask = NCT6687_FAN_MASK_DEFAULT;   // Bit N enables fanN+1/pwmN+1
+/* Sentinel: distinguishes "user did not pass fan_mask" from any real mask.
+ * The effective default is computed once the board is known. */
+#define NCT6687_FAN_MASK_UNSET UINT_MAX
+
+static unsigned int fan_mask = NCT6687_FAN_MASK_UNSET;   // Bit N enables fanN+1/pwmN+1
 static unsigned int temp_mask = NCT6687_TEMP_MASK_ALL; // Bit N enables tempN+1
 
 module_param(fan_mask, uint, 0444);
@@ -532,9 +536,10 @@ static int nct6687_msi_alt_channels(void)
 	if (!dmi_check_system(nct6687_dual_pump_boards))
 		return NCT6687_NUM_REG_FAN;
 
-	/* enable the extra tachometer bit unless the user set fan_mask explicitly */
-	if (fan_mask == NCT6687_FAN_MASK_DEFAULT)
-		fan_mask |= BIT(NCT6687_NUM_REG_FAN);
+	/* An explicitly provided mask is always respected; only the default
+	 * gains the extra tachometer bit. */
+	if (fan_mask == NCT6687_FAN_MASK_UNSET)
+		fan_mask = NCT6687_FAN_MASK_DEFAULT | BIT(NCT6687_NUM_REG_FAN);
 
 	return ARRAY_SIZE(nct6687_fan_config_msi_alt);
 }
@@ -2164,7 +2169,9 @@ static int __init sensors_nct6687_init(void)
 	int address;
 	int i, err;
 
-	if (fan_mask & ~NCT6687_FAN_MASK_ALL)
+	/* Only validate a mask the user actually passed; the sentinel is
+	 * resolved later, once the board (and channel count) is known. */
+	if (fan_mask != NCT6687_FAN_MASK_UNSET && (fan_mask & ~NCT6687_FAN_MASK_ALL))
 	{
 		pr_warn("fan_mask=0x%x has bits above fan%d, ignoring them\n", fan_mask, NCT6687_NUM_REG_FAN_MAX);
 		fan_mask &= NCT6687_FAN_MASK_ALL;
@@ -2187,6 +2194,11 @@ static int __init sensors_nct6687_init(void)
 			nct6687_fan_channels = nct6687_msi_alt_channels();
 		}
 	}
+
+	/* Board is known now: resolve the sentinel for every path that did not
+	 * already set an effective mask (default mapping, non-dual-pump boards). */
+	if (fan_mask == NCT6687_FAN_MASK_UNSET)
+		fan_mask = NCT6687_FAN_MASK_DEFAULT;
 
 	err = platform_driver_register(&nct6687_driver);
 	if (err)
