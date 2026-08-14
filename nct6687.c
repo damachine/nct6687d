@@ -1757,7 +1757,12 @@ static void nct6687_setup_fans(struct nct6687_data *data)
 	 * control path, so they are seeded separately below and skipped here.
 	 */
 	for (i = NCT6687_NUM_REG_FAN; i < nct6687_fan_channels; i++) {
-		u16 rpm = nct6687_read16(data, NCT6687_REG_FAN_RPM(i));
+		u16 rpm;
+
+		if (!NCT6687_FAN_ENABLED(i))
+			continue;
+
+		rpm = nct6687_read16(data, NCT6687_REG_FAN_RPM(i));
 
 		data->rpm[0][i] = rpm;
 		data->rpm[1][i] = rpm;
@@ -1766,9 +1771,16 @@ static void nct6687_setup_fans(struct nct6687_data *data)
 
 	for (i = 0; i < NCT6687_NUM_REG_FAN; i++)
 	{
-		u16 reg = nct6687_read(data, NCT6687_REG_FAN_CTRL_MODE(i));
-		u16 bitMask = 0x01 << i;
-		u16 rpm = nct6687_read16(data, NCT6687_REG_FAN_RPM(i));
+		u16 reg;
+		u16 bitMask;
+		u16 rpm;
+
+		if (!NCT6687_FAN_ENABLED(i))
+			continue;
+
+		reg = nct6687_read(data, NCT6687_REG_FAN_CTRL_MODE(i));
+		bitMask = 0x01 << i;
+		rpm = nct6687_read16(data, NCT6687_REG_FAN_RPM(i));
 
 		data->rpm[0][i] = rpm;
 		data->rpm[1][i] = rpm;
@@ -1808,9 +1820,16 @@ static void nct6687_setup_temperatures(struct nct6687_data *data)
 
 	for (i = 0; i < NCT6687_NUM_REG_TEMP; i++)
 	{
-		s32 value = (char)nct6687_read(data, NCT6687_REG_TEMP(i));
-		s32 half = (nct6687_read(data, NCT6687_REG_TEMP(i) + 1) >> 7) & 0x1;
-		s32 temperature = (value * 1000) + (500 * half);
+		s32 value;
+		s32 half;
+		s32 temperature;
+
+		if (!NCT6687_TEMP_ENABLED(i))
+			continue;
+
+		value = (char)nct6687_read(data, NCT6687_REG_TEMP(i));
+		half = (nct6687_read(data, NCT6687_REG_TEMP(i) + 1) >> 7) & 0x1;
+		temperature = (value * 1000) + (500 * half);
 
 		data->temperature[0][i] = temperature;
 		data->temperature[1][i] = temperature;
@@ -1826,6 +1845,9 @@ static void nct6687_setup_pwm(struct nct6687_data *data)
 
 	for (i = 0; i < NCT6687_NUM_REG_PWM; i++)
 	{
+		if (!NCT6687_FAN_ENABLED(i))
+			continue;
+
 		data->pwm[i] = nct6687_read(data, NCT6687_REG_PWM(i));
 		data->pwm_enable[i] = nct6687_get_pwm_enable(data, i);
 
