@@ -578,22 +578,24 @@ static int nct6687_fan_config_op_write_handler(const char *val, const struct ker
 
 static int nct6687_fan_config_op_read_handler(char *buffer, const struct kernel_param *kp)
 {
+	const char *config;
+
 	switch (nct6687_fan_config_type)
 	{
 	case FAN_CONFIG_DEFAULT:
-		strcpy(buffer, "default");
+		config = "default";
 		break;
 
 	case FAN_CONFIG_MSI_ALT1:
-		strcpy(buffer, "msi_alt1");
+		config = "msi_alt1";
 		break;
 
 	default:
-		strcpy(buffer, "error");
+		config = "error";
 		break;
 	}
 
-	return strlen(buffer);
+	return sprintf(buffer, "%s\n", config);
 }
 
 static const struct kernel_param_ops nct6687_fan_config_op_ops = {
@@ -616,6 +618,7 @@ static const struct kernel_param_ops nct6687_fan_config_op_ops = {
  * exists).
  */
 module_param_cb(fan_config, &nct6687_fan_config_op_ops, NULL, 0444);
+MODULE_PARM_DESC(fan_config, "Fan register mapping (default or msi_alt1)");
 
 /* ------------------------------------------------------- */
 struct nct6687_data
