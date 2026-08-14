@@ -2245,8 +2245,6 @@ static int __init sensors_nct6687_init(void)
 		if (address <= 0)
 			continue;
 
-		found = true;
-
 		pdev[i] = platform_device_alloc(DRVNAME, address);
 		if (!pdev[i])
 		{
@@ -2281,6 +2279,8 @@ static int __init sensors_nct6687_init(void)
 		err = platform_device_add(pdev[i]);
 		if (err)
 			goto exit_device_put;
+
+		found = true;
 	}
 
 	if (!found)
