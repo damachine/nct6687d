@@ -1366,12 +1366,13 @@ static ssize_t fan_control_watchdog_store(struct device *dev,
 	}
 	data->fan_watchdog_timeout = timeout;
 	if (timeout)
-		data->fan_watchdog_deadline = jiffies + secs_to_jiffies(timeout);
+		data->fan_watchdog_deadline = jiffies +
+			msecs_to_jiffies(timeout * MSEC_PER_SEC);
 	mutex_unlock(&data->update_lock);
 
 	if (timeout)
 		mod_delayed_work(system_long_wq, &data->fan_watchdog_work,
-				 secs_to_jiffies(timeout));
+				 msecs_to_jiffies(timeout * MSEC_PER_SEC));
 	else
 		cancel_delayed_work_sync(&data->fan_watchdog_work);
 	mutex_unlock(&data->fan_watchdog_lock);
@@ -1526,7 +1527,7 @@ static int nct6687_write_hwmon(struct device *dev, enum hwmon_sensor_types type,
 #define NCT6687_TEMP_CONFIG (HWMON_T_INPUT | HWMON_T_MIN | HWMON_T_MAX | HWMON_T_LABEL)
 #define NCT6687_PWM_CONFIG (HWMON_PWM_INPUT | HWMON_PWM_ENABLE)
 
-static const struct hwmon_channel_info *const nct6687_info[] = {
+static const struct hwmon_channel_info *nct6687_info[] = {
 	HWMON_CHANNEL_INFO(in,
 			   NCT6687_IN_CONFIG, NCT6687_IN_CONFIG, NCT6687_IN_CONFIG,
 			   NCT6687_IN_CONFIG, NCT6687_IN_CONFIG, NCT6687_IN_CONFIG,
@@ -1868,16 +1869,22 @@ static int nct6687_resume(struct device *dev)
  * Sleep PM ops registered via .driver.pm. The platform_driver.suspend
  * / .resume slots are deprecated; .driver.pm is the modern dispatch
  * path in platform_pm_suspend / platform_pm_resume.
- * DEFINE_SIMPLE_DEV_PM_OPS also wires freeze/thaw and poweroff/restore, so
- * hibernate uses the same handlers as S3.
+ * The PM helpers also wire freeze/thaw and poweroff/restore, so hibernate uses
+ * the same handlers as S3.
  */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+static SIMPLE_DEV_PM_OPS(nct6687_dev_pm_ops, nct6687_suspend, nct6687_resume);
+#define NCT6687_PM_OPS (&nct6687_dev_pm_ops)
+#else
 static DEFINE_SIMPLE_DEV_PM_OPS(nct6687_dev_pm_ops, nct6687_suspend,
 				nct6687_resume);
+#define NCT6687_PM_OPS pm_sleep_ptr(&nct6687_dev_pm_ops)
+#endif
 
 static struct platform_driver nct6687_driver = {
 	.driver = {
 		.name = DRVNAME,
-		.pm = pm_sleep_ptr(&nct6687_dev_pm_ops),
+		.pm = NCT6687_PM_OPS,
 	},
 	.probe = nct6687_probe,
 	.remove = nct6687_remove,
