@@ -1,5 +1,3 @@
-obj-m += nct6687.o
-
 curpwd      := $(shell pwd)
 kver        ?= $(shell uname -r)
 commitcount := $(shell git rev-list --all --count 2>/dev/null)
@@ -15,14 +13,15 @@ endif
 build:
 	rm -rf ${curpwd}/${kver}
 	mkdir -p ${curpwd}/${kver}
-	cp ${curpwd}/Makefile ${curpwd}/nct6687.c ${curpwd}/${kver}
-	make -C /lib/modules/${kver}/build M=${curpwd}/${kver} $(LLVM_FLAGS) modules
+	cp ${curpwd}/Kbuild ${curpwd}/Makefile ${curpwd}/nct6687.c ${curpwd}/${kver}
+	$(MAKE) -C /lib/modules/${kver}/build M=${curpwd}/${kver} $(LLVM_FLAGS) modules
 install: build
-	sudo cp ${curpwd}/${kver}/nct6687.ko /lib/modules/${kver}/kernel/drivers/hwmon/
-	sudo depmod
+	sudo $(MAKE) -C /lib/modules/${kver}/build M=${curpwd}/${kver} $(LLVM_FLAGS) modules_install
+	sudo rm -f -- /lib/modules/${kver}/kernel/drivers/hwmon/nct6687.ko
+	sudo depmod ${kver}
 	sudo modprobe nct6687
 clean:
-	[ -d "${curpwd}/${kver}" ] && make -C /lib/modules/${kver}/build M=${curpwd}/${kver} $(LLVM_FLAGS) clean || true
+	[ -d "${curpwd}/${kver}" ] && $(MAKE) -C /lib/modules/${kver}/build M=${curpwd}/${kver} $(LLVM_FLAGS) clean || true
 
 
 akmod/build:
@@ -34,7 +33,7 @@ akmod/build:
 	fi
 	sudo dnf install -y rpmdevtools kmodtool
 	mkdir -p ${curpwd}/.tmp/nct6687d-1.0.${commitcount}/nct6687d
-	cp LICENSE Makefile nct6687.c ${curpwd}/.tmp/nct6687d-1.0.${commitcount}/nct6687d
+	cp LICENSE Kbuild Makefile nct6687.c ${curpwd}/.tmp/nct6687d-1.0.${commitcount}/nct6687d
 	cd .tmp && tar -czvf nct6687d-1.0.${commitcount}.tar.gz nct6687d-1.0.${commitcount} && cd -
 	mkdir -p ${curpwd}/.tmp/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 	cp ${curpwd}/.tmp/nct6687d-1.0.${commitcount}.tar.gz ${curpwd}/.tmp/rpmbuild/SOURCES/
@@ -53,12 +52,12 @@ akmod: akmod/install
 
 
 dkms/build:
-	make -C /lib/modules/${kver}/build M=${curpwd} $(LLVM_FLAGS) modules
+	$(MAKE) -C /lib/modules/${kver}/build M=${curpwd} $(LLVM_FLAGS) modules
 
 dkms/install:
 	rm -rf ${curpwd}/dkms
 	mkdir -p ${curpwd}/dkms
-	cp ${curpwd}/dkms.conf ${curpwd}/Makefile ${curpwd}/nct6687.c ${curpwd}/dkms
+	cp ${curpwd}/dkms.conf ${curpwd}/Kbuild ${curpwd}/Makefile ${curpwd}/nct6687.c ${curpwd}/dkms
 	sudo rm -rf /usr/src/nct6687d-1
 	sudo cp -rT dkms /usr/src/nct6687d-1
 	sudo dkms install nct6687d/1
@@ -66,7 +65,7 @@ dkms/install:
 
 dkms/clean:
 	sudo dkms remove nct6687d/1 --all
-	make -C /lib/modules/${kver}/build M=${curpwd} $(LLVM_FLAGS) clean
+	$(MAKE) -C /lib/modules/${kver}/build M=${curpwd} $(LLVM_FLAGS) clean
 
 debian/changelog: FORCE
 	git --no-pager log \
@@ -81,5 +80,8 @@ deb: debian/changelog
 	fi
 	dpkg-buildpackage -b -rfakeroot -us -uc
 
-.PHONY: FORCE
+.PHONY: build install clean \
+	akmod akmod/build akmod/install akmod/clean \
+	dkms/build dkms/install dkms/clean \
+	deb FORCE
 FORCE:
