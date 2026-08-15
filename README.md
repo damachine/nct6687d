@@ -346,13 +346,14 @@ echo 255 > pwm6
 
 ### `pwm[1-8]_enable`
 
-Gets/sets controls mode of fan/temperature control.
+Gets/sets the fan control mode.
 
 Accepted values:
  * `1` - manual speed management through `pwm[1-8]`
- * `99` - whatever automatic mode was configured by firmware
-          (this is a deliberately weird value to be dropped after adding more
-           modes)
+ * `2` - automatic control using the profile configured by firmware
+
+The legacy value `99` is still accepted when written for compatibility, but
+reading `pwm[1-8]_enable` always reports the standard hwmon value `1` or `2`.
 
 Example:
 
@@ -360,11 +361,11 @@ Example:
 # fix a fan at current speed (`echo pwm6` will be constant from now on)
 echo 1 > pwm6_enable
 # switch back to automatic control set up by firmware (`echo pwm6` is again dynamic after this)
-echo 99 > pwm6_enable
+echo 2 > pwm6_enable
 # switch to ~25% of max speed
 echo 64 > pwm6
 # automatic
-echo 99 > pwm6_enable
+echo 2 > pwm6_enable
 # back to ~25% (it seems to be remembered)
 echo 1 > pwm6_enable
 ```

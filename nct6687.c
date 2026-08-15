@@ -33,7 +33,6 @@
 #include <linux/io.h>
 #include <linux/jiffies.h>
 #include <linux/hwmon.h>
-#include <linux/hwmon-sysfs.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
@@ -94,8 +93,8 @@ enum kinds
  * The driver previously reported 99 for the auto state and rejected any
  * write other than 1 or 99. That made standard userspace (lm-sensors
  * `fancontrol`, ventd, etc.) trip on `-EINVAL` when restoring auto mode
- * on shutdown. Both values are now accepted in store_pwm_enable;
- * show_pwm_enable always returns the ABI-conforming 1 or 2.
+ * on shutdown. Both values are accepted when writing pwm_enable;
+ * reads always return the ABI-conforming 1 or 2.
  */
 enum pwm_enable
 {
@@ -105,8 +104,8 @@ enum pwm_enable
 
 /*
  * Legacy auto-mode value historically reported / accepted by this
- * driver. Still accepted in store_pwm_enable for callers that scripted
- * around the old behaviour; never reported in show_pwm_enable.
+ * driver. Still accepted for callers that scripted around the old
+ * behaviour; never reported when reading pwm_enable.
  */
 #define NCT6687_LEGACY_AUTO_MODE 99
 
@@ -241,8 +240,6 @@ MODULE_PARM_DESC(temp_mask, "Bitmask of enabled temperature channels, bit 0 = te
 
 #define NCT6687_FAN_ENABLED(x) (fan_mask & BIT(x))
 #define NCT6687_TEMP_ENABLED(x) (temp_mask & BIT(x))
-
-#define NCT6687_ATTRS_PER_CHANNEL(_templates) ((int)ARRAY_SIZE(_templates) - 1)
 
 #define NCT6687_REG_TEMP(x) (0x100 + (x) * 2)
 #define NCT6687_REG_VOLTAGE(x) (0x120 + (x) * 2)
@@ -578,22 +575,24 @@ static int nct6687_fan_config_op_write_handler(const char *val, const struct ker
 
 static int nct6687_fan_config_op_read_handler(char *buffer, const struct kernel_param *kp)
 {
+	const char *config;
+
 	switch (nct6687_fan_config_type)
 	{
 	case FAN_CONFIG_DEFAULT:
-		strcpy(buffer, "default");
+		config = "default";
 		break;
 
 	case FAN_CONFIG_MSI_ALT1:
-		strcpy(buffer, "msi_alt1");
+		config = "msi_alt1";
 		break;
 
 	default:
-		strcpy(buffer, "error");
+		config = "error";
 		break;
 	}
 
-	return strlen(buffer);
+	return sprintf(buffer, "%s\n", config);
 }
 
 static const struct kernel_param_ops nct6687_fan_config_op_ops = {
@@ -616,6 +615,7 @@ static const struct kernel_param_ops nct6687_fan_config_op_ops = {
  * exists).
  */
 module_param_cb(fan_config, &nct6687_fan_config_op_ops, NULL, 0444);
+MODULE_PARM_DESC(fan_config, "Fan register mapping (default or msi_alt1)");
 
 /* ------------------------------------------------------- */
 struct nct6687_data
@@ -625,7 +625,7 @@ struct nct6687_data
 	enum kinds kind;
 
 	struct device *hwmon_dev;
-	const struct attribute_group *groups[6];
+	const struct attribute_group *extra_groups[2];
 
 	struct mutex update_lock;	/* used to protect sensor updates */
 	struct mutex EC_io_lock;	/* used to protect EC io */
@@ -672,68 +672,6 @@ struct nct6687_sio_data
 	enum kinds kind;
 };
 
-struct sensor_device_template
-{
-	struct device_attribute dev_attr;
-	union
-	{
-		struct
-		{
-			u8 nr;
-			u8 index;
-		} s;
-		int index;
-	} u;
-	bool s2; /* true if both index and nr are used */
-};
-
-struct sensor_device_attr_u
-{
-	union
-	{
-		struct sensor_device_attribute a1;
-		struct sensor_device_attribute_2 a2;
-	} u;
-	char name[32];
-};
-
-#define __TEMPLATE_ATTR(_template, _mode, _show, _store) \
-	{                                                    \
-		.attr = {.name = _template, .mode = _mode},      \
-		.show = _show,                                   \
-		.store = _store,                                 \
-	}
-
-#define SENSOR_DEVICE_TEMPLATE(_template, _mode, _show, _store, _index) \
-	{                                                                   \
-		.dev_attr = __TEMPLATE_ATTR(_template, _mode, _show, _store),   \
-		.u.index = _index,                                              \
-		.s2 = false}
-
-#define SENSOR_DEVICE_TEMPLATE_2(_template, _mode, _show, _store,     \
-								 _nr, _index)                         \
-	{                                                                 \
-		.dev_attr = __TEMPLATE_ATTR(_template, _mode, _show, _store), \
-		.u.s.index = _index,                                          \
-		.u.s.nr = _nr,                                                \
-		.s2 = true}
-
-#define SENSOR_TEMPLATE(_name, _template, _mode, _show, _store, _index)                                                        \
-	static struct sensor_device_template sensor_dev_template_##_name = SENSOR_DEVICE_TEMPLATE(_template, _mode, _show, _store, \
-																							  _index)
-
-#define SENSOR_TEMPLATE_2(_name, _template, _mode, _show, _store,                                                                \
-						  _nr, _index)                                                                                           \
-	static struct sensor_device_template sensor_dev_template_##_name = SENSOR_DEVICE_TEMPLATE_2(_template, _mode, _show, _store, \
-																								_nr, _index)
-
-struct sensor_template_group
-{
-	struct sensor_device_template **templates;
-	umode_t (*is_visible)(struct kobject *, struct attribute *, int);
-	int base;
-};
-
 static bool nct6687_save_fan_control(struct nct6687_data *data, int index);
 static bool nct6687_restore_fan_pwm(struct nct6687_data *data, int index);
 static bool nct6687_restore_fan_control(struct nct6687_data *data, int index);
@@ -746,81 +684,6 @@ static const char *nct6687_voltage_label(char *buf, int index)
 		strcpy(buf, nct6687_voltage_definition[index].label);
 
 	return buf;
-}
-
-static struct attribute_group *nct6687_create_attr_group(struct device *dev, const struct sensor_template_group *tg, int repeat)
-{
-	struct sensor_device_attribute_2 *a2;
-	struct sensor_device_attribute *a;
-	struct sensor_device_template **t;
-	struct sensor_device_attr_u *su;
-	struct attribute_group *group;
-	struct attribute **attrs;
-	int i, count;
-
-	if (repeat <= 0)
-		return ERR_PTR(-EINVAL);
-
-	t = tg->templates;
-	for (count = 0; *t; t++, count++)
-		;
-
-	if (count == 0)
-		return ERR_PTR(-EINVAL);
-
-	group = devm_kzalloc(dev, sizeof(*group), GFP_KERNEL);
-	if (group == NULL)
-		return ERR_PTR(-ENOMEM);
-
-	attrs = devm_kcalloc(dev, repeat * count + 1, sizeof(*attrs), GFP_KERNEL);
-	if (attrs == NULL)
-		return ERR_PTR(-ENOMEM);
-
-	su = devm_kzalloc(dev, array3_size(repeat, count, sizeof(*su)), GFP_KERNEL);
-	if (su == NULL)
-		return ERR_PTR(-ENOMEM);
-
-	group->attrs = attrs;
-	group->is_visible = tg->is_visible;
-
-	for (i = 0; i < repeat; i++)
-	{
-		t = tg->templates;
-
-		while (*t != NULL)
-		{
-			snprintf(su->name, sizeof(su->name), (*t)->dev_attr.attr.name, tg->base + i);
-
-			if ((*t)->s2)
-			{
-				a2 = &su->u.a2;
-				sysfs_attr_init(&a2->dev_attr.attr);
-				a2->dev_attr.attr.name = su->name;
-				a2->nr = (*t)->u.s.nr + i;
-				a2->index = (*t)->u.s.index;
-				a2->dev_attr.attr.mode = (*t)->dev_attr.attr.mode;
-				a2->dev_attr.show = (*t)->dev_attr.show;
-				a2->dev_attr.store = (*t)->dev_attr.store;
-				*attrs = &a2->dev_attr.attr;
-			}
-			else
-			{
-				a = &su->u.a1;
-				sysfs_attr_init(&a->dev_attr.attr);
-				a->dev_attr.attr.name = su->name;
-				a->index = (*t)->u.index + i;
-				a->dev_attr.attr.mode = (*t)->dev_attr.attr.mode;
-				a->dev_attr.show = (*t)->dev_attr.show;
-				a->dev_attr.store = (*t)->dev_attr.store;
-				*attrs = &a->dev_attr.attr;
-			}
-			attrs++;
-			su++;
-			t++;
-		}
-	}
-
-	return group;
 }
 
 static u16 nct6687_read(struct nct6687_data *data, u16 address)
@@ -1065,154 +928,6 @@ static struct nct6687_data *nct6687_update_device(struct device *dev)
 	return data;
 }
 
-/*
- * Sysfs callback functions
- */
-static ssize_t show_voltage_label(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	struct sensor_device_attribute *sattr = to_sensor_dev_attr(attr);
-
-	if (manual)
-		return sprintf(buf, "in%d\n", sattr->index);
-	else
-		return sprintf(buf, "%s\n", nct6687_voltage_definition[sattr->index].label);
-}
-
-static ssize_t show_voltage_value(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	struct sensor_device_attribute_2 *sattr = to_sensor_dev_attr_2(attr);
-	struct nct6687_data *data = nct6687_update_device(dev);
-
-	return sprintf(buf, "%d\n", data->voltage[sattr->index][sattr->nr]);
-}
-
-static umode_t nct6687_voltage_is_visible(struct kobject *kobj, struct attribute *attr, int index)
-{
-	pr_debug("nct6687_voltage_is_visible[%d], attr=0x%04X\n", index, attr->mode);
-	return attr->mode;
-}
-
-SENSOR_TEMPLATE(voltage_label, "in%d_label", S_IRUGO, show_voltage_label, NULL, 0);
-SENSOR_TEMPLATE_2(voltage_input, "in%d_input", S_IRUGO, show_voltage_value, NULL, 0, 0);
-SENSOR_TEMPLATE_2(voltage_min, "in%d_min", S_IRUGO, show_voltage_value, NULL, 0, 1);
-SENSOR_TEMPLATE_2(voltage_max, "in%d_max", S_IRUGO, show_voltage_value, NULL, 0, 2);
-
-static struct sensor_device_template *nct6687_attributes_voltage_template[] = {
-	&sensor_dev_template_voltage_label,
-	&sensor_dev_template_voltage_input,
-	&sensor_dev_template_voltage_min,
-	&sensor_dev_template_voltage_max,
-	NULL,
-};
-
-static const struct sensor_template_group nct6687_voltage_template_group = {
-	.templates = nct6687_attributes_voltage_template,
-	.is_visible = nct6687_voltage_is_visible,
-};
-
-static ssize_t show_fan_label(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	struct sensor_device_attribute *sattr = to_sensor_dev_attr(attr);
-
-	return sprintf(buf, "%s\n", nct6687_fan_config_active[sattr->index].label);
-}
-
-static ssize_t show_fan_value(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	struct sensor_device_attribute_2 *sattr = to_sensor_dev_attr_2(attr);
-	struct nct6687_data *data = nct6687_update_device(dev);
-
-	return sprintf(buf, "%d\n", data->rpm[sattr->index][sattr->nr]);
-}
-
-SENSOR_TEMPLATE(fan_label, "fan%d_label", S_IRUGO, show_fan_label, NULL, 0);
-SENSOR_TEMPLATE_2(fan_input, "fan%d_input", S_IRUGO, show_fan_value, NULL, 0, 0);
-SENSOR_TEMPLATE_2(fan_min, "fan%d_min", S_IRUGO, show_fan_value, NULL, 0, 1);
-SENSOR_TEMPLATE_2(fan_max, "fan%d_max", S_IRUGO, show_fan_value, NULL, 0, 2);
-
-/*
- * nct6687_fan_is_visible uses the index into the following array
- * to determine if attributes should be created or not.
- * Any change in order or content must be matched.
- */
-static struct sensor_device_template *nct6687_attributes_fan_template[] = {
-	&sensor_dev_template_fan_label,
-	&sensor_dev_template_fan_input,
-	&sensor_dev_template_fan_min,
-	&sensor_dev_template_fan_max,
-	NULL,
-};
-
-static umode_t nct6687_fan_is_visible(struct kobject *kobj, struct attribute *attr, int index)
-{
-	if (!NCT6687_FAN_ENABLED(index / NCT6687_ATTRS_PER_CHANNEL(nct6687_attributes_fan_template)))
-		return 0;
-
-	return attr->mode;
-}
-
-static const struct sensor_template_group nct6687_fan_template_group = {
-	.templates = nct6687_attributes_fan_template,
-	.is_visible = nct6687_fan_is_visible,
-	.base = 1,
-};
-
-static ssize_t show_temperature_label(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	struct sensor_device_attribute *sattr = to_sensor_dev_attr(attr);
-
-	return sprintf(buf, "%s\n", nct6687_temp_label[sattr->index]);
-}
-
-static ssize_t show_temperature_value(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	struct sensor_device_attribute_2 *sattr = to_sensor_dev_attr_2(attr);
-	struct nct6687_data *data = nct6687_update_device(dev);
-
-	return sprintf(buf, "%d\n", data->temperature[sattr->index][sattr->nr]);
-}
-
-SENSOR_TEMPLATE(temp_label, "temp%d_label", S_IRUGO, show_temperature_label, NULL, 0);
-SENSOR_TEMPLATE_2(temp_input, "temp%d_input", S_IRUGO, show_temperature_value, NULL, 0, 0);
-SENSOR_TEMPLATE_2(temp_min, "temp%d_min", S_IRUGO, show_temperature_value, NULL, 0, 1);
-SENSOR_TEMPLATE_2(temp_max, "temp%d_max", S_IRUGO, show_temperature_value, NULL, 0, 2);
-
-/*
- * nct6687_temp_is_visible uses the index into the following array
- * to determine if attributes should be created or not.
- * Any change in order or content must be matched.
- */
-static struct sensor_device_template *nct6687_attributes_temp_template[] = {
-	&sensor_dev_template_temp_input,
-	&sensor_dev_template_temp_label,
-	&sensor_dev_template_temp_min,
-	&sensor_dev_template_temp_max,
-	NULL,
-};
-
-static umode_t nct6687_temp_is_visible(struct kobject *kobj, struct attribute *attr, int index)
-{
-	if (!NCT6687_TEMP_ENABLED(index / NCT6687_ATTRS_PER_CHANNEL(nct6687_attributes_temp_template)))
-		return 0;
-
-	return attr->mode;
-}
-
-static const struct sensor_template_group nct6687_temp_template_group = {
-	.templates = nct6687_attributes_temp_template,
-	.is_visible = nct6687_temp_is_visible,
-	.base = 1,
-};
-
-static ssize_t show_pwm(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	struct nct6687_data *data = nct6687_update_device(dev);
-	struct sensor_device_attribute_2 *sattr = to_sensor_dev_attr_2(attr);
-	int index = sattr->index;
-
-	return sprintf(buf, "%d\n", data->pwm[index]);
-}
-
 /* Returns true on success and false on timeout. */
 static bool start_fan_cfg_update(struct nct6687_data *data, int fan)
 {
@@ -1315,17 +1030,14 @@ static bool finish_fan_cfg_update(struct nct6687_data *data, int fan)
 	return success;
 }
 
-static ssize_t store_pwm(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+static int nct6687_write_pwm(struct device *dev, int index, long val)
 {
-	struct sensor_device_attribute_2 *sattr = to_sensor_dev_attr_2(attr);
 	struct nct6687_data *data = dev_get_drvdata(dev);
-	int index = sattr->index;
-	unsigned long val;
 	u16 mode;
 	u8 bitMask;
 	bool success;
 
-	if (kstrtoul(buf, 10, &val) || val > 255 || index >= NCT6687_NUM_REG_FAN)
+	if (val < 0 || val > 255 || index >= NCT6687_NUM_REG_FAN)
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
@@ -1384,28 +1096,17 @@ static ssize_t store_pwm(struct device *dev, struct device_attribute *attr, cons
 
 	mutex_unlock(&data->update_lock);
 
-	return success ? count : -EIO;
+	return success ? 0 : -EIO;
 }
 
-static ssize_t show_pwm_enable(struct device *dev, struct device_attribute *attr, char *buf)
+static int nct6687_write_pwm_enable(struct device *dev, int index, long val)
 {
-	struct nct6687_data *data = nct6687_update_device(dev);
-	struct sensor_device_attribute_2 *sattr = to_sensor_dev_attr_2(attr);
-
-	return sprintf(buf, "%d\n", data->pwm_enable[sattr->nr]);
-}
-
-static ssize_t store_pwm_enable(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct sensor_device_attribute_2 *sattr = to_sensor_dev_attr_2(attr);
 	struct nct6687_data *data = dev_get_drvdata(dev);
-	int index = sattr->nr;
-	unsigned long val;
 	u16 mode;
 	u8 bitMask;
 	bool restore_pwm = false;
 
-	if (index >= NCT6687_NUM_REG_FAN || kstrtoul(buf, 10, &val))
+	if (index >= NCT6687_NUM_REG_FAN)
 		return -EINVAL;
 	if (val != manual_mode && val != auto_mode && val != NCT6687_LEGACY_AUTO_MODE)
 		return -EINVAL;
@@ -1476,11 +1177,8 @@ static ssize_t store_pwm_enable(struct device *dev, struct device_attribute *att
 
 	mutex_unlock(&data->update_lock);
 
-	return count;
+	return 0;
 }
-
-SENSOR_TEMPLATE(pwm, "pwm%d", S_IRUGO, show_pwm, store_pwm, 0);
-SENSOR_TEMPLATE_2(pwm_enable, "pwm%d_enable", S_IRUGO, show_pwm_enable, store_pwm_enable, 0, 0);
 
 static bool nct6687_save_fan_control(struct nct6687_data *data, int index)
 {
@@ -1668,12 +1366,13 @@ static ssize_t fan_control_watchdog_store(struct device *dev,
 	}
 	data->fan_watchdog_timeout = timeout;
 	if (timeout)
-		data->fan_watchdog_deadline = jiffies + secs_to_jiffies(timeout);
+		data->fan_watchdog_deadline = jiffies +
+			msecs_to_jiffies(timeout * MSEC_PER_SEC);
 	mutex_unlock(&data->update_lock);
 
 	if (timeout)
 		mod_delayed_work(system_long_wq, &data->fan_watchdog_work,
-				 secs_to_jiffies(timeout));
+				 msecs_to_jiffies(timeout * MSEC_PER_SEC));
 	else
 		cancel_delayed_work_sync(&data->fan_watchdog_work);
 	mutex_unlock(&data->fan_watchdog_lock);
@@ -1692,34 +1391,174 @@ static const struct attribute_group nct6687_fan_watchdog_group = {
 	.attrs = nct6687_fan_watchdog_attrs,
 };
 
-/*
- * nct6687_pwm_is_visible uses the index into the following array
- * to determine if attributes should be created or not.
- * Any change in order or content must be matched.
- */
-static struct sensor_device_template *nct6687_attributes_pwm_template[] = {
-	&sensor_dev_template_pwm,
-	&sensor_dev_template_pwm_enable,
+static umode_t nct6687_is_visible(const void *drvdata,
+				  enum hwmon_sensor_types type, u32 attr, int channel)
+{
+	switch (type) {
+	case hwmon_in:
+		return 0444;
+	case hwmon_fan:
+		if (channel >= nct6687_fan_channels || !NCT6687_FAN_ENABLED(channel))
+			return 0;
+		return 0444;
+	case hwmon_temp:
+		return NCT6687_TEMP_ENABLED(channel) ? 0444 : 0;
+	case hwmon_pwm:
+		if (channel >= NCT6687_NUM_REG_PWM || !NCT6687_FAN_ENABLED(channel))
+			return 0;
+		return 0644;
+	default:
+		return 0;
+	}
+}
+
+static int nct6687_read_hwmon(struct device *dev, enum hwmon_sensor_types type,
+			      u32 attr, int channel, long *val)
+{
+	struct nct6687_data *data = nct6687_update_device(dev);
+
+	switch (type) {
+	case hwmon_in:
+		switch (attr) {
+		case hwmon_in_input:
+			*val = data->voltage[0][channel];
+			return 0;
+		case hwmon_in_min:
+			*val = data->voltage[1][channel];
+			return 0;
+		case hwmon_in_max:
+			*val = data->voltage[2][channel];
+			return 0;
+		default:
+			return -EOPNOTSUPP;
+		}
+	case hwmon_fan:
+		switch (attr) {
+		case hwmon_fan_input:
+			*val = data->rpm[0][channel];
+			return 0;
+		case hwmon_fan_min:
+			*val = data->rpm[1][channel];
+			return 0;
+		case hwmon_fan_max:
+			*val = data->rpm[2][channel];
+			return 0;
+		default:
+			return -EOPNOTSUPP;
+		}
+	case hwmon_temp:
+		switch (attr) {
+		case hwmon_temp_input:
+			*val = data->temperature[0][channel];
+			return 0;
+		case hwmon_temp_min:
+			*val = data->temperature[1][channel];
+			return 0;
+		case hwmon_temp_max:
+			*val = data->temperature[2][channel];
+			return 0;
+		default:
+			return -EOPNOTSUPP;
+		}
+	case hwmon_pwm:
+		switch (attr) {
+		case hwmon_pwm_input:
+			*val = data->pwm[channel];
+			return 0;
+		case hwmon_pwm_enable:
+			*val = data->pwm_enable[channel];
+			return 0;
+		default:
+			return -EOPNOTSUPP;
+		}
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
+static int nct6687_read_string(struct device *dev, enum hwmon_sensor_types type,
+			       u32 attr, int channel, const char **str)
+{
+	static const char *const manual_voltage_labels[] = {
+		"in0", "in1", "in2", "in3", "in4", "in5", "in6",
+		"in7", "in8", "in9", "in10", "in11", "in12", "in13",
+	};
+
+	switch (type) {
+	case hwmon_in:
+		if (attr != hwmon_in_label)
+			return -EOPNOTSUPP;
+		*str = manual ? manual_voltage_labels[channel] :
+			nct6687_voltage_definition[channel].label;
+		return 0;
+	case hwmon_fan:
+		if (attr != hwmon_fan_label)
+			return -EOPNOTSUPP;
+		*str = nct6687_fan_config_active[channel].label;
+		return 0;
+	case hwmon_temp:
+		if (attr != hwmon_temp_label)
+			return -EOPNOTSUPP;
+		*str = nct6687_temp_label[channel];
+		return 0;
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
+static int nct6687_write_hwmon(struct device *dev, enum hwmon_sensor_types type,
+			       u32 attr, int channel, long val)
+{
+	if (type != hwmon_pwm)
+		return -EOPNOTSUPP;
+
+	switch (attr) {
+	case hwmon_pwm_input:
+		return nct6687_write_pwm(dev, channel, val);
+	case hwmon_pwm_enable:
+		return nct6687_write_pwm_enable(dev, channel, val);
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
+#define NCT6687_IN_CONFIG (HWMON_I_INPUT | HWMON_I_MIN | HWMON_I_MAX | HWMON_I_LABEL)
+#define NCT6687_FAN_CONFIG (HWMON_F_INPUT | HWMON_F_MIN | HWMON_F_MAX | HWMON_F_LABEL)
+#define NCT6687_TEMP_CONFIG (HWMON_T_INPUT | HWMON_T_MIN | HWMON_T_MAX | HWMON_T_LABEL)
+#define NCT6687_PWM_CONFIG (HWMON_PWM_INPUT | HWMON_PWM_ENABLE)
+
+static const struct hwmon_channel_info *nct6687_info[] = {
+	HWMON_CHANNEL_INFO(in,
+			   NCT6687_IN_CONFIG, NCT6687_IN_CONFIG, NCT6687_IN_CONFIG,
+			   NCT6687_IN_CONFIG, NCT6687_IN_CONFIG, NCT6687_IN_CONFIG,
+			   NCT6687_IN_CONFIG, NCT6687_IN_CONFIG, NCT6687_IN_CONFIG,
+			   NCT6687_IN_CONFIG, NCT6687_IN_CONFIG, NCT6687_IN_CONFIG,
+			   NCT6687_IN_CONFIG, NCT6687_IN_CONFIG),
+	HWMON_CHANNEL_INFO(fan,
+			   NCT6687_FAN_CONFIG, NCT6687_FAN_CONFIG, NCT6687_FAN_CONFIG,
+			   NCT6687_FAN_CONFIG, NCT6687_FAN_CONFIG, NCT6687_FAN_CONFIG,
+			   NCT6687_FAN_CONFIG, NCT6687_FAN_CONFIG, NCT6687_FAN_CONFIG),
+	HWMON_CHANNEL_INFO(temp,
+			   NCT6687_TEMP_CONFIG, NCT6687_TEMP_CONFIG, NCT6687_TEMP_CONFIG,
+			   NCT6687_TEMP_CONFIG, NCT6687_TEMP_CONFIG, NCT6687_TEMP_CONFIG,
+			   NCT6687_TEMP_CONFIG),
+	HWMON_CHANNEL_INFO(pwm,
+			   NCT6687_PWM_CONFIG, NCT6687_PWM_CONFIG, NCT6687_PWM_CONFIG,
+			   NCT6687_PWM_CONFIG, NCT6687_PWM_CONFIG, NCT6687_PWM_CONFIG,
+			   NCT6687_PWM_CONFIG, NCT6687_PWM_CONFIG),
 	NULL,
 };
 
-static umode_t nct6687_pwm_is_visible(struct kobject *kobj, struct attribute *attr, int index)
-{
-	{
-		int ch = index / NCT6687_ATTRS_PER_CHANNEL(nct6687_attributes_pwm_template);
+static const struct hwmon_ops nct6687_hwmon_ops = {
+	.is_visible = nct6687_is_visible,
+	.read = nct6687_read_hwmon,
+	.read_string = nct6687_read_string,
+	.write = nct6687_write_hwmon,
+};
 
-		/* tachometer-only channels have no PWM control path */
-		if (ch >= NCT6687_NUM_REG_FAN || !NCT6687_FAN_ENABLED(ch))
-			return 0;
-	}
-
-	return attr->mode | S_IWUSR;
-}
-
-static const struct sensor_template_group nct6687_pwm_template_group = {
-	.templates = nct6687_attributes_pwm_template,
-	.is_visible = nct6687_pwm_is_visible,
-	.base = 1,
+static const struct hwmon_chip_info nct6687_chip_info = {
+	.ops = &nct6687_hwmon_ops,
+	.info = nct6687_info,
 };
 
 /* Get the monitoring functions started */
@@ -1757,7 +1596,12 @@ static void nct6687_setup_fans(struct nct6687_data *data)
 	 * control path, so they are seeded separately below and skipped here.
 	 */
 	for (i = NCT6687_NUM_REG_FAN; i < nct6687_fan_channels; i++) {
-		u16 rpm = nct6687_read16(data, NCT6687_REG_FAN_RPM(i));
+		u16 rpm;
+
+		if (!NCT6687_FAN_ENABLED(i))
+			continue;
+
+		rpm = nct6687_read16(data, NCT6687_REG_FAN_RPM(i));
 
 		data->rpm[0][i] = rpm;
 		data->rpm[1][i] = rpm;
@@ -1766,9 +1610,16 @@ static void nct6687_setup_fans(struct nct6687_data *data)
 
 	for (i = 0; i < NCT6687_NUM_REG_FAN; i++)
 	{
-		u16 reg = nct6687_read(data, NCT6687_REG_FAN_CTRL_MODE(i));
-		u16 bitMask = 0x01 << i;
-		u16 rpm = nct6687_read16(data, NCT6687_REG_FAN_RPM(i));
+		u16 reg;
+		u16 bitMask;
+		u16 rpm;
+
+		if (!NCT6687_FAN_ENABLED(i))
+			continue;
+
+		reg = nct6687_read(data, NCT6687_REG_FAN_CTRL_MODE(i));
+		bitMask = 0x01 << i;
+		rpm = nct6687_read16(data, NCT6687_REG_FAN_RPM(i));
 
 		data->rpm[0][i] = rpm;
 		data->rpm[1][i] = rpm;
@@ -1808,9 +1659,16 @@ static void nct6687_setup_temperatures(struct nct6687_data *data)
 
 	for (i = 0; i < NCT6687_NUM_REG_TEMP; i++)
 	{
-		s32 value = (char)nct6687_read(data, NCT6687_REG_TEMP(i));
-		s32 half = (nct6687_read(data, NCT6687_REG_TEMP(i) + 1) >> 7) & 0x1;
-		s32 temperature = (value * 1000) + (500 * half);
+		s32 value;
+		s32 half;
+		s32 temperature;
+
+		if (!NCT6687_TEMP_ENABLED(i))
+			continue;
+
+		value = (char)nct6687_read(data, NCT6687_REG_TEMP(i));
+		half = (nct6687_read(data, NCT6687_REG_TEMP(i) + 1) >> 7) & 0x1;
+		temperature = (value * 1000) + (500 * half);
 
 		data->temperature[0][i] = temperature;
 		data->temperature[1][i] = temperature;
@@ -1826,6 +1684,9 @@ static void nct6687_setup_pwm(struct nct6687_data *data)
 
 	for (i = 0; i < NCT6687_NUM_REG_PWM; i++)
 	{
+		if (!NCT6687_FAN_ENABLED(i))
+			continue;
+
 		data->pwm[i] = nct6687_read(data, NCT6687_REG_PWM(i));
 		data->pwm_enable[i] = nct6687_get_pwm_enable(data, i);
 
@@ -1885,11 +1746,9 @@ static int nct6687_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct nct6687_sio_data *sio_data = dev->platform_data;
-	struct attribute_group *group;
 	struct nct6687_data *data;
 	struct device *hwmon_dev;
 	struct resource *res;
-	int groups = 0;
 	char build[16];
 
 	res = platform_get_resource(pdev, IORESOURCE_IO, 0);
@@ -1942,44 +1801,16 @@ static int nct6687_probe(struct platform_device *pdev)
 	nct6687_setup_temperatures(data);
 	nct6687_setup_voltages(data);
 
-	/* Register sysfs hooks */
-
-	group = nct6687_create_attr_group(dev, &nct6687_pwm_template_group, NCT6687_NUM_REG_FAN);
-
-	if (IS_ERR(group))
-		return PTR_ERR(group);
-
-	data->groups[groups++] = group;
-
 	if (nct6687_fan_config_type == FAN_CONFIG_MSI_ALT1 && msi_fan_brute_force)
-		data->groups[groups++] = &nct6687_fan_watchdog_group;
-
-	group = nct6687_create_attr_group(dev, &nct6687_voltage_template_group, NCT6687_NUM_REG_VOLTAGE);
-
-	if (IS_ERR(group))
-		return PTR_ERR(group);
-
-	data->groups[groups++] = group;
-
-	group = nct6687_create_attr_group(dev, &nct6687_fan_template_group, nct6687_fan_channels);
-
-	if (IS_ERR(group))
-		return PTR_ERR(group);
-
-	data->groups[groups++] = group;
-
-	group = nct6687_create_attr_group(dev, &nct6687_temp_template_group, NCT6687_NUM_REG_TEMP);
-
-	if (IS_ERR(group))
-		return PTR_ERR(group);
-
-	data->groups[groups++] = group;
+		data->extra_groups[0] = &nct6687_fan_watchdog_group;
 
 	scnprintf(build, sizeof(build), "%02d/%02d/%02d", nct6687_read(data, NCT6687_REG_BUILD_MONTH), nct6687_read(data, NCT6687_REG_BUILD_DAY), nct6687_read(data, NCT6687_REG_BUILD_YEAR));
 
 	dev_info(dev, "%s EC firmware version %d.%d build %s\n", nct6687_chip_names[data->kind], nct6687_read(data, NCT6687_REG_VERSION_HI), nct6687_read(data, NCT6687_REG_VERSION_LO), build);
 
-	hwmon_dev = devm_hwmon_device_register_with_groups(dev, nct6687_device_names[data->kind], data, data->groups);
+	hwmon_dev = devm_hwmon_device_register_with_info(
+		dev, nct6687_device_names[data->kind], data,
+		&nct6687_chip_info, data->extra_groups);
 	if (IS_ERR(hwmon_dev))
 		return PTR_ERR(hwmon_dev);
 	data->hwmon_dev = hwmon_dev;
@@ -2038,17 +1869,22 @@ static int nct6687_resume(struct device *dev)
  * Sleep PM ops registered via .driver.pm. The platform_driver.suspend
  * / .resume slots are deprecated; .driver.pm is the modern dispatch
  * path in platform_pm_suspend / platform_pm_resume.
- * SIMPLE_DEV_PM_OPS also wires freeze/thaw and poweroff/restore, so
- * hibernate uses the same handlers as S3.
+ * The PM helpers also wire freeze/thaw and poweroff/restore, so hibernate uses
+ * the same handlers as S3.
  */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 static SIMPLE_DEV_PM_OPS(nct6687_dev_pm_ops, nct6687_suspend, nct6687_resume);
-
-#define NCT6687_DEV_PM_OPS (&nct6687_dev_pm_ops)
+#define NCT6687_PM_OPS (&nct6687_dev_pm_ops)
+#else
+static DEFINE_SIMPLE_DEV_PM_OPS(nct6687_dev_pm_ops, nct6687_suspend,
+				nct6687_resume);
+#define NCT6687_PM_OPS pm_sleep_ptr(&nct6687_dev_pm_ops)
+#endif
 
 static struct platform_driver nct6687_driver = {
 	.driver = {
 		.name = DRVNAME,
-		.pm = NCT6687_DEV_PM_OPS,
+		.pm = NCT6687_PM_OPS,
 	},
 	.probe = nct6687_probe,
 	.remove = nct6687_remove,
@@ -2220,8 +2056,6 @@ static int __init sensors_nct6687_init(void)
 		if (address <= 0)
 			continue;
 
-		found = true;
-
 		pdev[i] = platform_device_alloc(DRVNAME, address);
 		if (!pdev[i])
 		{
@@ -2256,6 +2090,8 @@ static int __init sensors_nct6687_init(void)
 		err = platform_device_add(pdev[i]);
 		if (err)
 			goto exit_device_put;
+
+		found = true;
 	}
 
 	if (!found)
