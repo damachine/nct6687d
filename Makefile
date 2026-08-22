@@ -1,28 +1,32 @@
-curpwd      := $(shell pwd)
-kver        ?= $(shell uname -r)
-commitcount := $(shell git rev-list --all --count 2>/dev/null)
-commithash  := $(shell git rev-parse --short HEAD 2>/dev/null)
-fedoraver   := $(shell sed -n 's/.*Fedora release \([^ ]*\).*/\1/p' /etc/fedora-release 2>/dev/null || echo 0)
+KVER ?= $(shell uname -r)
+KDIR ?= /lib/modules/$(KVER)/build
+INSTALL_MOD_DIR ?= updates
+commitcount := $(shell git rev-list --count HEAD 2>/dev/null)
+commithash := $(shell git rev-parse --short HEAD 2>/dev/null)
+fedoraver := $(shell sed -n 's/.*Fedora release \([^ ]*\).*/\1/p' /etc/fedora-release 2>/dev/null || echo 0)
 
 # Detect if the kernel was built with clang/LLVM and use the same compiler
-KERNEL_CC := $(shell grep -qs CONFIG_CC_IS_CLANG=y /lib/modules/${kver}/build/.config && echo clang)
+KERNEL_CC := $(shell grep -qs CONFIG_CC_IS_CLANG=y $(KDIR)/.config && echo clang)
 ifeq ($(KERNEL_CC),clang)
   LLVM_FLAGS := LLVM=1
 endif
 
-build:
-	rm -rf ${curpwd}/${kver}
-	mkdir -p ${curpwd}/${kver}
-	cp ${curpwd}/Kbuild ${curpwd}/Makefile ${curpwd}/nct6687.c ${curpwd}/${kver}
-	$(MAKE) -C /lib/modules/${kver}/build M=${curpwd}/${kver} $(LLVM_FLAGS) modules
-install: build
-	sudo $(MAKE) -C /lib/modules/${kver}/build M=${curpwd}/${kver} $(LLVM_FLAGS) modules_install
-	sudo rm -f -- /lib/modules/${kver}/kernel/drivers/hwmon/nct6687.ko
-	sudo depmod ${kver}
-	sudo modprobe nct6687
+default: modules
+build: modules
+modules:
+	$(MAKE) -C $(KDIR) M=$(CURDIR) $(LLVM_FLAGS) modules
+install: modules
+	sudo $(MAKE) -C $(KDIR) M=$(CURDIR) $(LLVM_FLAGS) \
+		INSTALL_MOD_DIR=$(INSTALL_MOD_DIR) modules_install
+	# Remove the legacy module installed by previous releases
+	sudo rm -f -- /lib/modules/$(KVER)/kernel/drivers/hwmon/nct6687.ko*
+	sudo depmod $(KVER)
+uninstall:
+	@test -n "$(KVER)" || { echo "Unable to determine kernel release from $(KDIR)" >&2; exit 1; }
+	sudo rm -f -- /lib/modules/$(KVER)/$(INSTALL_MOD_DIR)/nct6687.ko*
+	sudo depmod $(KVER)
 clean:
-	[ -d "${curpwd}/${kver}" ] && $(MAKE) -C /lib/modules/${kver}/build M=${curpwd}/${kver} $(LLVM_FLAGS) clean || true
-
+	$(MAKE) -C $(KDIR) M=$(CURDIR) $(LLVM_FLAGS) clean
 
 akmod/build:
 	@if [ $(fedoraver) -gt 40 ]; then \
@@ -32,47 +36,42 @@ akmod/build:
 		sudo dnf group install -y "Development Tools" --skip-unavailable; \
 	fi
 	sudo dnf install -y rpmdevtools kmodtool
-	mkdir -p ${curpwd}/.tmp/nct6687d-1.0.${commitcount}/nct6687d
-	cp LICENSE Kbuild Makefile nct6687.c ${curpwd}/.tmp/nct6687d-1.0.${commitcount}/nct6687d
+	mkdir -p $(CURDIR)/.tmp/nct6687d-1.0.${commitcount}/nct6687d
+	cp LICENSE Kbuild Makefile nct6687.c $(CURDIR)/.tmp/nct6687d-1.0.${commitcount}/nct6687d
 	cd .tmp && tar -czvf nct6687d-1.0.${commitcount}.tar.gz nct6687d-1.0.${commitcount} && cd -
-	mkdir -p ${curpwd}/.tmp/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-	cp ${curpwd}/.tmp/nct6687d-1.0.${commitcount}.tar.gz ${curpwd}/.tmp/rpmbuild/SOURCES/
-	echo 'nct6687' | tee ${curpwd}/.tmp/rpmbuild/SOURCES/nct6687.conf
-	cp fedora/*.spec ${curpwd}/.tmp/rpmbuild/SPECS/
-	sed -i "s/MAKEFILE_PKGVER/${commitcount}/g" ${curpwd}/.tmp/rpmbuild/SPECS/*
-	sed -i "s/MAKEFILE_COMMITHASH/${commithash}/g" ${curpwd}/.tmp/rpmbuild/SPECS/*
-	rpmbuild -ba --define "_topdir ${curpwd}/.tmp/rpmbuild" ${curpwd}/.tmp/rpmbuild/SPECS/nct6687d.spec
-	rpmbuild -ba --define "_topdir ${curpwd}/.tmp/rpmbuild" ${curpwd}/.tmp/rpmbuild/SPECS/nct6687d-kmod.spec
+	mkdir -p $(CURDIR)/.tmp/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+	cp $(CURDIR)/.tmp/nct6687d-1.0.${commitcount}.tar.gz $(CURDIR)/.tmp/rpmbuild/SOURCES/
+	cp LICENSE $(CURDIR)/.tmp/rpmbuild/SOURCES/
+	echo 'nct6687' | tee $(CURDIR)/.tmp/rpmbuild/SOURCES/nct6687.conf
+	cp fedora/*.spec $(CURDIR)/.tmp/rpmbuild/SPECS/
+	sed -i "s/MAKEFILE_PKGVER/${commitcount}/g" $(CURDIR)/.tmp/rpmbuild/SPECS/*
+	sed -i "s/MAKEFILE_COMMITHASH/${commithash}/g" $(CURDIR)/.tmp/rpmbuild/SPECS/*
+	rpmbuild -ba --define "_topdir $(CURDIR)/.tmp/rpmbuild" $(CURDIR)/.tmp/rpmbuild/SPECS/nct6687d.spec
+	rpmbuild -ba --define "_topdir $(CURDIR)/.tmp/rpmbuild" $(CURDIR)/.tmp/rpmbuild/SPECS/nct6687d-kmod.spec
 akmod/install: akmod/build
-	sudo dnf install ${curpwd}/.tmp/rpmbuild/RPMS/*/*.rpm
-akmod/clean:
+	sudo dnf install $(CURDIR)/.tmp/rpmbuild/RPMS/*/*.rpm
+akmod/remove:
 	sudo dnf remove nct6687d
 	rm -rf .tmp
 akmod: akmod/install
 
-
-dkms/build:
-	$(MAKE) -C /lib/modules/${kver}/build M=${curpwd} $(LLVM_FLAGS) modules
-
 dkms/install:
-	rm -rf ${curpwd}/dkms
-	mkdir -p ${curpwd}/dkms
-	cp ${curpwd}/dkms.conf ${curpwd}/Kbuild ${curpwd}/Makefile ${curpwd}/nct6687.c ${curpwd}/dkms
-	sudo rm -rf /usr/src/nct6687d-1
-	sudo cp -rT dkms /usr/src/nct6687d-1
-	sudo dkms install nct6687d/1
-	sudo modprobe nct6687
-
-dkms/clean:
+	rm -rf $(CURDIR)/dkms
+	mkdir -p $(CURDIR)/dkms
+	cp $(CURDIR)/dkms.conf $(CURDIR)/Kbuild $(CURDIR)/Makefile $(CURDIR)/nct6687.c $(CURDIR)/dkms
+	if sudo dkms status nct6687d/1 2>/dev/null | grep -q '^nct6687d/1'; then \
+		sudo dkms remove nct6687d/1 --all; \
+	fi
+	sudo dkms install $(CURDIR)/dkms
+dkms/remove:
 	sudo dkms remove nct6687d/1 --all
-	$(MAKE) -C /lib/modules/${kver}/build M=${curpwd} $(LLVM_FLAGS) clean
+	rm -rf $(CURDIR)/dkms
 
 debian/changelog: FORCE
 	git --no-pager log \
 		--format='nct6687d-dkms (%ad) unstable; urgency=low%n%n  * %s%n%n -- %aN <%aE>  %aD%n' \
 		--date='format:%Y%m%d-%H%M%S' \
 		> $@
-
 deb: debian/changelog
 	sudo apt install -y debhelper dkms
 	@if apt-cache show dh-dkms > /dev/null 2>&1; then \
@@ -80,8 +79,8 @@ deb: debian/changelog
 	fi
 	dpkg-buildpackage -b -rfakeroot -us -uc
 
-.PHONY: build install clean \
-	akmod akmod/build akmod/install akmod/clean \
-	dkms/build dkms/install dkms/clean \
+.PHONY: default build modules install uninstall clean \
+	akmod akmod/build akmod/install akmod/remove \
+	dkms/install dkms/remove \
 	deb FORCE
 FORCE:
