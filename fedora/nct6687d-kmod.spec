@@ -1,36 +1,33 @@
 %if 0%{?fedora}
 %global buildforkernels akmod
-%global debug_package %{nil}
 %endif
+%global debug_package %{nil}
 
 %global prjname nct6687d
 %global pkgver MAKEFILE_PKGVER
 %global commithash MAKEFILE_COMMITHASH
-%define buildforkernels akmod
 
 Name:           %{prjname}-kmod
 Version:        1.0.%{pkgver}
-Release:        git%{commithash}
+Release:        1.git%{commithash}%{?dist}
 Summary:        Kernel module (kmod) for %{prjname}
-License:        GPL-2.0
+License:        GPL-2.0-or-later
 URL:            https://github.com/Fred78290/nct6687d
 Source0:        nct6687d-%{version}.tar.gz
-BuildRoot:      %{_tmppath}/%{name}-%{version}-root-%(%{__id_u} -n)
 
+%global AkmodsBuildRequires %{_bindir}/kmodtool, gcc, make, elfutils-libelf-devel
+BuildRequires:  %{AkmodsBuildRequires}
+%{!?kernels:BuildRequires: buildsys-build-rpmfusion-kerneldevpkgs-%{?buildforkernels:%{buildforkernels}}%{!?buildforkernels:current}-%{_target_cpu} }
 
-BuildRequires:  gcc
-BuildRequires:  make
-BuildRequires:  elfutils-libelf-devel
-BuildRequires:  kmodtool
-Conflicts: 	    nct6687d-kmod-common
-
-%{expand:%(kmodtool --target %{_target_cpu} --kmodname %{prjname} %{?buildforkernels:--%{buildforkernels}} %{?kernels:--for-kernels "%{?kernels}"} 2>/dev/null) }
+%{expand:%(kmodtool --target %{_target_cpu} --repo rpmfusion --kmodname %{prjname} %{?buildforkernels:--%{buildforkernels}} %{?kernels:--for-kernels "%{?kernels}"} 2>/dev/null) }
 
 %description
 %{prjname} kernel module
 
 %prep
-kmodtool --target %{_target_cpu} --kmodname %{prjname} %{?buildforkernels:--%{buildforkernels}} %{?kernels:--for-kernels "%{?kernels}"} 2>/dev/null
+%{?kmodtool_check}
+
+kmodtool --target %{_target_cpu} --repo rpmfusion --kmodname %{prjname} %{?buildforkernels:--%{buildforkernels}} %{?kernels:--for-kernels "%{?kernels}"} 2>/dev/null
 
 %autosetup -n nct6687d-%{version}
 

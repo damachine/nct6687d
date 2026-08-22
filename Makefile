@@ -3,7 +3,6 @@ KDIR ?= /lib/modules/$(KVER)/build
 INSTALL_MOD_DIR ?= updates
 commitcount := $(shell git rev-list --count HEAD 2>/dev/null)
 commithash := $(shell git rev-parse --short HEAD 2>/dev/null)
-fedoraver := $(shell sed -n 's/.*Fedora release \([^ ]*\).*/\1/p' /etc/fedora-release 2>/dev/null || echo 0)
 
 # Detect if the kernel was built with clang/LLVM and use the same compiler
 KERNEL_CC := $(shell grep -qs CONFIG_CC_IS_CLANG=y $(KDIR)/.config && echo clang)
@@ -29,13 +28,7 @@ clean:
 	$(MAKE) -C $(KDIR) M=$(CURDIR) $(LLVM_FLAGS) clean
 
 akmod/build:
-	@if [ $(fedoraver) -gt 40 ]; then \
-		echo "Fedora version $(fedoraver) is greater than 40, using dnf5 command"; \
-		sudo dnf install -y @development-tools; \
-	else \
-		sudo dnf group install -y "Development Tools" --skip-unavailable; \
-	fi
-	sudo dnf install -y rpmdevtools kmodtool
+	sudo dnf install -y akmods buildsys-build-rpmfusion
 	mkdir -p $(CURDIR)/.tmp/nct6687d-1.0.${commitcount}/nct6687d
 	cp LICENSE Kbuild Makefile nct6687.c $(CURDIR)/.tmp/nct6687d-1.0.${commitcount}/nct6687d
 	cd .tmp && tar -czvf nct6687d-1.0.${commitcount}.tar.gz nct6687d-1.0.${commitcount} && cd -
