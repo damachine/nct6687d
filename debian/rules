@@ -3,10 +3,10 @@
 include /usr/share/dpkg/pkg-info.mk
 
 %:
-	dh $@ --parallel --with dkms
+	dh $@ --with dkms
 
 override_dh_install:
-	find . -maxdepth 1 -type f -exec dh_install {} usr/src/nct6687d-$(DEB_VERSION) \;
+	dh_install Kbuild Makefile nct6687.c usr/src/nct6687d-$(DEB_VERSION)
 
 override_dh_dkms:
 	dh_dkms -V $(DEB_VERSION)
