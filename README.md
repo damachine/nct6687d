@@ -64,6 +64,12 @@ The implementation is minimalist and was done by reverse coding of Windows 10 so
 ~$ cd nct6687d
 ~$ make install
 ```
+
+To remove a manual installation:
+
+```shell
+~$ make uninstall
+```
 <br>
 
 ## Sensors

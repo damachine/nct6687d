@@ -2,10 +2,15 @@ Source: nct6687d-dkms
 Section: kernel
 Priority: optional
 Maintainer: Frederic BOLTZ <frederic.boltz@gmail.com>
-Build-Depends: debhelper, dkms
+Build-Depends: debhelper-compat (= 13), dh-dkms
+Standards-Version: 4.7.4
+Rules-Requires-Root: no
 Homepage: https://github.com/Fred78290/nct6687d/
 
 Package: nct6687d-dkms
 Architecture: all
 Depends: dkms, ${misc:Depends}
-Description: Nuvoton NCT6687-R driver (DKMS version)
+Description: DKMS driver for Nuvoton NCT6687-R hardware monitoring
+ This package provides the out-of-tree nct6687 kernel module through DKMS.
+ It exposes supported voltage, temperature, fan-speed, and PWM sensors
+ through the Linux hardware monitoring subsystem.

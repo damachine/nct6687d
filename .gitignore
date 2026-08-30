@@ -1,4 +1,6 @@
 .Module.symvers.cmd
+.module-common.o
+..module-common.o.cmd
 .modules.order.cmd
 .nct6687.ko.cmd
 .nct6687.mod.cmd
