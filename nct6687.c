@@ -491,6 +491,7 @@ static const struct dmi_system_id nct6687_msi_alt_boards[] = {
 	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "PRO X870-P WIFI (MS-7E47)")}},
 	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "PRO X870E-P WIFI (MS-7E70)")}},
 	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "MAG X870E TOMAHAWK WIFI (MS-7E59)")}},
+	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "MAG X870E TOMAHAWK MAX WIFI PZ (MS-7E84)")}},
 	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "MPG X870E CARBON WIFI (MS-7E49)")}},
 	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "MPG X870E EDGE TI WIFI (MS-7E59)")}},
 	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "MEG X870E GODLIKE (MS-7E48)")}},
