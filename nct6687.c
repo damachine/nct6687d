@@ -509,6 +509,7 @@ static const struct dmi_system_id nct6687_msi_alt_boards[] = {
 	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "PRO Z890-A WIFI (MS-7E32)")}},
 	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "PRO Z890-P WIFI (MS-7E34)")}},
 	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "PRO Z890-S WIFI (MS-7E54)")}},
+	{.matches = {DMI_MATCH(DMI_BOARD_NAME, "PRO Z890-S WIFI WHITE (MS-7E54)")}},
 	{}};
 
 static int nct6687_fan_config_type = FAN_CONFIG_DEFAULT; // default
