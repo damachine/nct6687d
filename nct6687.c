@@ -37,6 +37,7 @@
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 #include <linux/version.h>
 #include <linux/workqueue.h>
 
@@ -205,7 +206,7 @@ static inline void superio_exit(int ioreg)
 
 /* Common and NCT6687 specific data */
 
-#define NCT6687_NUM_REG_VOLTAGE (sizeof(nct6687_voltage_definition) / sizeof(struct voltage_reg))
+#define NCT6687_NUM_REG_VOLTAGE ARRAY_SIZE(nct6687_voltage_definition)
 #define NCT6687_NUM_REG_TEMP 7
 #define NCT6687_NUM_REG_FAN 8
 
@@ -550,8 +551,7 @@ static int nct6687_fan_config_op_write_handler(const char *val, const struct ker
 	char valcp[16];
 	char *s;
 
-	strscpy(valcp, val, 16);
-	valcp[15] = '\0';
+	strscpy(valcp, val, sizeof(valcp));
 
 	s = strstrip(valcp);
 
@@ -1757,7 +1757,7 @@ static int nct6687_probe(struct platform_device *pdev)
 	if (!devm_request_region(dev, res->start, IOREGION_LENGTH, DRVNAME))
 		return -EBUSY;
 
-	data = devm_kzalloc(dev, sizeof(struct nct6687_data), GFP_KERNEL);
+	data = devm_kzalloc(dev, sizeof(*data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
 
@@ -2065,7 +2065,7 @@ static int __init sensors_nct6687_init(void)
 			goto exit_device_unregister;
 		}
 
-		err = platform_device_add_data(pdev[i], &sio_data, sizeof(struct nct6687_sio_data));
+		err = platform_device_add_data(pdev[i], &sio_data, sizeof(sio_data));
 		if (err)
 			goto exit_device_put;
 
