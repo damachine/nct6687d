@@ -33,6 +33,7 @@
 #include <linux/io.h>
 #include <linux/jiffies.h>
 #include <linux/hwmon.h>
+#include <linux/minmax.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
@@ -42,14 +43,6 @@
 #include <linux/workqueue.h>
 
 #define DRVNAME "nct6687"
-
-#ifndef MIN
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#endif
-
-#ifndef MAX
-#define MAX(a, b) (((a) > (b)) ? (a) : (b))
-#endif
 
 #define NCT6687_FAN_CURVE_POINTS 7	   // Number of points in the fan curve registers for each fan.
 #define NCT6687_FAN_CURVE_POINT_SIZE 2 // Each curve point occupies 2 registers
@@ -301,7 +294,7 @@ struct voltage_reg
 	const char *label;
 };
 
-static struct voltage_reg nct6687_voltage_definition[] = {
+static const struct voltage_reg nct6687_voltage_definition[] = {
 	// +12V
 	{
 		.reg = 0,
@@ -390,6 +383,11 @@ static struct voltage_reg nct6687_voltage_definition[] = {
 
 };
 
+static const char *const nct6687_manual_voltage_labels[] = {
+	"in0", "in1", "in2", "in3", "in4", "in5", "in6",
+	"in7", "in8", "in9", "in10", "in11", "in12", "in13",
+};
+
 static const char *const nct6687_temp_label[] = {
 	"CPU",
 	"System",
@@ -409,7 +407,7 @@ struct nct6687_fan_config
 	const char *label;
 };
 
-static struct nct6687_fan_config nct6687_fan_config_default[] = {
+static const struct nct6687_fan_config nct6687_fan_config_default[] = {
 	{.reg_rpm = 0x140, .reg_pwm = 0x160, .reg_pwm_write = 0xA28, .label = "CPU Fan"},		// CPU Fan
 	{.reg_rpm = 0x142, .reg_pwm = 0x161, .reg_pwm_write = 0xA29, .label = "Pump Fan"},		// PUMP Fan
 	{.reg_rpm = 0x144, .reg_pwm = 0x162, .reg_pwm_write = 0xA2A, .label = "System Fan #1"}, // SYS Fan 1, Nil on others
@@ -423,7 +421,7 @@ static struct nct6687_fan_config nct6687_fan_config_default[] = {
 // some MSI B850, X870, and Z890 boards
 // PWM registers and control registers from LibreHardwareMonitor (NCT6687D with alternative mapping)
 // https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/blob/master/LibreHardwareMonitorLib/Hardware/Motherboard/Lpc/Nct677X.cs
-static struct nct6687_fan_config nct6687_fan_config_msi_alt[] = {
+static const struct nct6687_fan_config nct6687_fan_config_msi_alt[] = {
 	{.reg_rpm = 0x140, .reg_pwm = 0x160, .reg_pwm_write = 0xA28, .label = "CPU Fan"},
 	{.reg_rpm = 0x142, .reg_pwm = 0x161, .reg_pwm_write = 0xA29, .label = "Pump Fan"},
 	{.reg_rpm = 0x15E, .reg_pwm = 0xE05, .reg_pwm_write = 0xC70, .label = "System Fan #1"},
@@ -514,7 +512,8 @@ static const struct dmi_system_id nct6687_msi_alt_boards[] = {
 	{}};
 
 static int nct6687_fan_config_type = FAN_CONFIG_DEFAULT; // default
-static struct nct6687_fan_config(*nct6687_fan_config_active) = nct6687_fan_config_default;
+static const struct nct6687_fan_config *nct6687_fan_config_active =
+	nct6687_fan_config_default;
 
 /*
  * Number of fan (tachometer) channels exposed by the active mapping.
@@ -555,20 +554,15 @@ static int nct6687_fan_config_op_write_handler(const char *val, const struct ker
 
 	s = strstrip(valcp);
 
-	if (strcmp(s, "default") == 0)
-	{
+	if (!strcmp(s, "default")) {
 		nct6687_fan_config_type = FAN_CONFIG_DEFAULT;
 		nct6687_fan_config_active = nct6687_fan_config_default;
 		nct6687_fan_channels = NCT6687_NUM_REG_FAN;
-	}
-	else if (strcmp(s, "msi_alt1") == 0)
-	{
+	} else if (!strcmp(s, "msi_alt1")) {
 		nct6687_fan_config_type = FAN_CONFIG_MSI_ALT1;
 		nct6687_fan_config_active = nct6687_fan_config_msi_alt;
 		nct6687_fan_channels = nct6687_msi_alt_channels();
-	}
-	else
-	{
+	} else {
 		return -EINVAL;
 	}
 
@@ -678,14 +672,10 @@ static bool nct6687_save_fan_control(struct nct6687_data *data, int index);
 static bool nct6687_restore_fan_pwm(struct nct6687_data *data, int index);
 static bool nct6687_restore_fan_control(struct nct6687_data *data, int index);
 
-static const char *nct6687_voltage_label(char *buf, int index)
+static const char *nct6687_voltage_label(int index)
 {
-	if (manual)
-		sprintf(buf, "in%d", index);
-	else
-		strcpy(buf, nct6687_voltage_definition[index].label);
-
-	return buf;
+	return manual ? nct6687_manual_voltage_labels[index] :
+		nct6687_voltage_definition[index].label;
 }
 
 static u16 nct6687_read(struct nct6687_data *data, u16 address)
@@ -825,8 +815,8 @@ static void nct6687_update_temperatures(struct nct6687_data *data)
 		temperature = (value * 1000) + (500 * half);
 
 		data->temperature[0][i] = temperature;
-		data->temperature[1][i] = MIN(temperature, data->temperature[1][i]);
-		data->temperature[2][i] = MAX(temperature, data->temperature[2][i]);
+		data->temperature[1][i] = min(temperature, data->temperature[1][i]);
+		data->temperature[2][i] = max(temperature, data->temperature[2][i]);
 
 		pr_debug("nct6687_update_temperatures[%d]], addr=%04X, value=%d, half=%d, temperature=%d\n", i, NCT6687_REG_TEMP(i), value, half, temperature);
 	}
@@ -835,7 +825,6 @@ static void nct6687_update_temperatures(struct nct6687_data *data)
 static void nct6687_update_voltage(struct nct6687_data *data)
 {
 	int index;
-	char buf[128];
 
 	/* Measured voltages and limits */
 	for (index = 0; index < NCT6687_NUM_REG_VOLTAGE; index++)
@@ -852,10 +841,12 @@ static void nct6687_update_voltage(struct nct6687_data *data)
 		s32 voltage = manual ? value : value * nct6687_voltage_definition[index].multiplier;
 
 		data->voltage[0][index] = voltage;
-		data->voltage[1][index] = MIN(voltage, data->voltage[1][index]);
-		data->voltage[2][index] = MAX(voltage, data->voltage[2][index]);
+		data->voltage[1][index] = min(voltage, data->voltage[1][index]);
+		data->voltage[2][index] = max(voltage, data->voltage[2][index]);
 
-		pr_debug("nct6687_update_voltage[%d], %s, reg=%d, addr=0x%04x, value=%d, voltage=%d\n", index, nct6687_voltage_label(buf, index), reg, NCT6687_REG_VOLTAGE(index), value, voltage);
+		pr_debug("%s[%d], %s, reg=%d, addr=0x%04x, value=%d, voltage=%d\n",
+			 __func__, index, nct6687_voltage_label(index), reg,
+			 NCT6687_REG_VOLTAGE(index), value, voltage);
 	}
 
 	pr_debug("nct6687_update_voltage\n");
@@ -863,11 +854,11 @@ static void nct6687_update_voltage(struct nct6687_data *data)
 
 static enum pwm_enable nct6687_get_pwm_enable(struct nct6687_data *data, int index)
 {
-	u16 bitMask = 0x01 << index;
-	if (nct6687_read(data, NCT6687_REG_FAN_CTRL_MODE(index)) & bitMask)
-	{
+	u16 bit_mask = BIT(index);
+
+	if (nct6687_read(data, NCT6687_REG_FAN_CTRL_MODE(index)) & bit_mask)
 		return manual_mode;
-	}
+
 	return auto_mode;
 }
 
@@ -878,18 +869,19 @@ static void nct6687_update_fans(struct nct6687_data *data)
 	/* tachometer-only channels included (no PWM state touched here) */
 	for (i = 0; i < nct6687_fan_channels; i++)
 	{
-		s16 rmp;
+		u16 rpm;
 
 		if (!NCT6687_FAN_ENABLED(i))
 			continue;
 
-		rmp = nct6687_read16(data, NCT6687_REG_FAN_RPM(i));
+		rpm = nct6687_read16(data, NCT6687_REG_FAN_RPM(i));
 
-		data->rpm[0][i] = rmp;
-		data->rpm[1][i] = MIN(rmp, data->rpm[1][i]);
-		data->rpm[2][i] = MAX(rmp, data->rpm[2][i]);
+		data->rpm[0][i] = rpm;
+		data->rpm[1][i] = min(rpm, data->rpm[1][i]);
+		data->rpm[2][i] = max(rpm, data->rpm[2][i]);
 
-		pr_debug("nct6687_update_fans[%d], rpm=%d min=%d, max=%d", i, rmp, data->rpm[1][i], data->rpm[2][i]);
+		pr_debug("%s[%d], rpm=%d min=%d, max=%d", __func__, i, rpm,
+			 data->rpm[1][i], data->rpm[2][i]);
 	}
 
 	for (i = 0; i < NCT6687_NUM_REG_PWM; i++)
@@ -1036,7 +1028,7 @@ static int nct6687_write_pwm(struct device *dev, int index, long val)
 {
 	struct nct6687_data *data = dev_get_drvdata(dev);
 	u16 mode;
-	u8 bitMask;
+	u8 bit_mask;
 	bool success;
 
 	if (val < 0 || val > 255 || index >= NCT6687_NUM_REG_FAN)
@@ -1062,8 +1054,8 @@ static int nct6687_write_pwm(struct device *dev, int index, long val)
 	}
 
 	mode = nct6687_read(data, NCT6687_REG_FAN_CTRL_MODE(index));
-	bitMask = (u8)(0x01 << index);
-	mode = (u8)(mode | bitMask);
+	bit_mask = BIT(index);
+	mode = (u8)(mode | bit_mask);
 	nct6687_write(data, NCT6687_REG_FAN_CTRL_MODE(index), mode);
 
 	if (nct6687_uses_msi_fan_curve(index))
@@ -1105,7 +1097,7 @@ static int nct6687_write_pwm_enable(struct device *dev, int index, long val)
 {
 	struct nct6687_data *data = dev_get_drvdata(dev);
 	u16 mode;
-	u8 bitMask;
+	u8 bit_mask;
 	bool restore_pwm = false;
 
 	if (index >= NCT6687_NUM_REG_FAN)
@@ -1140,20 +1132,20 @@ static int nct6687_write_pwm_enable(struct device *dev, int index, long val)
 
 	mode = nct6687_read(data, NCT6687_REG_FAN_CTRL_MODE(index));
 
-	bitMask = (u8)(0x01 << index);
+	bit_mask = BIT(index);
 	if (val == manual_mode)
 	{
-		mode = (u8)(mode | bitMask);
+		mode = (u8)(mode | bit_mask);
 	}
 	else
 	{
 		/* auto_mode or NCT6687_LEGACY_AUTO_MODE — clear the manual-control bit. */
-		mode = (u8)(mode & ~bitMask);
+		mode = (u8)(mode & ~bit_mask);
 	}
 
 	nct6687_write(data, NCT6687_REG_FAN_CTRL_MODE(index), mode);
 	mode = nct6687_read(data, NCT6687_REG_FAN_CTRL_MODE(index));
-	if (!!(mode & bitMask) != (val == manual_mode))
+	if (!!(mode & bit_mask) != (val == manual_mode))
 	{
 		pr_err("Failed to verify fan %d control mode\n", index);
 		mutex_unlock(&data->update_lock);
@@ -1185,13 +1177,13 @@ static int nct6687_write_pwm_enable(struct device *dev, int index, long val)
 static bool nct6687_save_fan_control(struct nct6687_data *data, int index)
 {
 	u16 reg;
-	u16 bitMask;
+	u16 bit_mask;
 
 	if (data->_restoreDefaultFanControlRequired[index])
 		return true;
 
 	reg = nct6687_read(data, NCT6687_REG_FAN_CTRL_MODE(index));
-	bitMask = 0x01 << index;
+	bit_mask = BIT(index);
 
 	if (!start_fan_cfg_update(data, index))
 		return false;
@@ -1217,7 +1209,7 @@ static bool nct6687_save_fan_control(struct nct6687_data *data, int index)
 		pr_debug("Saved fan %d PWM target: %u\n", index,
 			 data->_initialFanPwmCommand[index]);
 
-	data->_initialFanControlMode[index] = (u8)(reg & bitMask);
+	data->_initialFanControlMode[index] = (u8)(reg & bit_mask);
 	data->_restoreDefaultFanControlRequired[index] = true;
 
 	return true;
@@ -1263,15 +1255,15 @@ static bool nct6687_restore_fan_control(struct nct6687_data *data, int index)
 	if (data->_restoreDefaultFanControlRequired[index])
 	{
 		u8 mode = nct6687_read(data, NCT6687_REG_FAN_CTRL_MODE(index));
-		u8 bitMask = 0x01 << index;
+		u8 bit_mask = BIT(index);
 
 		if (!nct6687_restore_fan_pwm(data, index))
 			return false;
 
-		mode = (u8)((mode & ~bitMask) | data->_initialFanControlMode[index]);
+		mode = (u8)((mode & ~bit_mask) | data->_initialFanControlMode[index]);
 		nct6687_write(data, NCT6687_REG_FAN_CTRL_MODE(index), mode);
 		mode = nct6687_read(data, NCT6687_REG_FAN_CTRL_MODE(index));
-		if ((mode & bitMask) != data->_initialFanControlMode[index])
+		if ((mode & bit_mask) != data->_initialFanControlMode[index])
 		{
 			pr_err("Failed to verify fan %d control-mode restore\n", index);
 			return false;
@@ -1481,16 +1473,11 @@ static int nct6687_read_hwmon(struct device *dev, enum hwmon_sensor_types type,
 static int nct6687_read_string(struct device *dev, enum hwmon_sensor_types type,
 			       u32 attr, int channel, const char **str)
 {
-	static const char *const manual_voltage_labels[] = {
-		"in0", "in1", "in2", "in3", "in4", "in5", "in6",
-		"in7", "in8", "in9", "in10", "in11", "in12", "in13",
-	};
-
 	switch (type) {
 	case hwmon_in:
 		if (attr != hwmon_in_label)
 			return -EOPNOTSUPP;
-		*str = manual ? manual_voltage_labels[channel] :
+		*str = manual ? nct6687_manual_voltage_labels[channel] :
 			nct6687_voltage_definition[channel].label;
 		return 0;
 	case hwmon_fan:
@@ -1613,20 +1600,20 @@ static void nct6687_setup_fans(struct nct6687_data *data)
 	for (i = 0; i < NCT6687_NUM_REG_FAN; i++)
 	{
 		u16 reg;
-		u16 bitMask;
+		u16 bit_mask;
 		u16 rpm;
 
 		if (!NCT6687_FAN_ENABLED(i))
 			continue;
 
 		reg = nct6687_read(data, NCT6687_REG_FAN_CTRL_MODE(i));
-		bitMask = 0x01 << i;
+		bit_mask = BIT(i);
 		rpm = nct6687_read16(data, NCT6687_REG_FAN_RPM(i));
 
 		data->rpm[0][i] = rpm;
 		data->rpm[1][i] = rpm;
 		data->rpm[2][i] = rpm;
-		data->_initialFanControlMode[i] = (u8)(reg & bitMask);
+		data->_initialFanControlMode[i] = (u8)(reg & bit_mask);
 		data->_restoreDefaultFanControlRequired[i] = false;
 
 		pr_debug("nct6687_setup_fans[%d], %s - addr=%04X, ctrl=%04X, rpm=%d, _initialFanControlMode=%d\n", i, nct6687_fan_config_active[i].label, NCT6687_REG_FAN_CTRL_MODE(i), reg, rpm, data->_initialFanControlMode[i]);
@@ -1636,7 +1623,6 @@ static void nct6687_setup_fans(struct nct6687_data *data)
 static void nct6687_setup_voltages(struct nct6687_data *data)
 {
 	int index;
-	char buf[64];
 
 	/* Measured voltages and limits */
 	for (index = 0; index < NCT6687_NUM_REG_VOLTAGE; index++)
@@ -1651,7 +1637,9 @@ static void nct6687_setup_voltages(struct nct6687_data *data)
 		data->voltage[1][index] = voltage;
 		data->voltage[2][index] = voltage;
 
-		pr_debug("nct6687_setup_voltages[%d], %s, addr=0x%04x, value=%d, voltage=%d\n", index, nct6687_voltage_label(buf, index), NCT6687_REG_VOLTAGE(index), value, voltage);
+		pr_debug("%s[%d], %s, addr=0x%04x, value=%d, voltage=%d\n",
+			 __func__, index, nct6687_voltage_label(index),
+			 NCT6687_REG_VOLTAGE(index), value, voltage);
 	}
 }
 
